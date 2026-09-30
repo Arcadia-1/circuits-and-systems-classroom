@@ -8,6 +8,7 @@
 export const publicLessonPaths = [
   '/adc/aliasing-and-nyquist-zones/',
   '/adc/binary-vs-redundant-sar/',
+  '/adc/pipeline-adc/',
   '/adc/analog-panel/',
   '/adc/time-interleaved-adcs/',
   '/pll/integer-vs-fractional/',

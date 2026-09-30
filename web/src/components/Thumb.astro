@@ -1,6 +1,6 @@
 ---
 /** Small schematic previews for the home page. */
-interface Props { kind: 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
+interface Props { kind: 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
 const { kind } = Astro.props;
 const xs = Array.from({ length: 13 }, (_, i) => 6 + i * 14);
 const saw = [-14, -8, -2, 6, 14];
@@ -141,6 +141,17 @@ const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 1
       {xs.map((x, i) => <g class="s1"><line x1={x} y1="30" x2={x} y2={30 + ((i % 3) - 1)} /><circle cx={x} cy={30 + ((i % 3) - 1)} r="2.2" /></g>)}
       <line class="base" x1="0" y1="78" x2="188" y2="78" />
       {xs.map((x, i) => <g class="s2"><line x1={x} y1="78" x2={x} y2={78 + saw[i % 5]} /><circle cx={x} cy={78 + saw[i % 5]} r="2.2" /></g>)}
+    </>
+  ) : kind === 'pipeline' ? (
+    <>
+      <line class="base" x1="0" y1="51" x2="188" y2="51" />
+      {[8, 48, 88, 128].map((x, i) => <g>
+        <rect class="mini" x={x} y="28" width="28" height="45" rx="4" />
+        <line class="s1" x1={x + 6} y1="51" x2={x + 20} y2={i % 2 ? 38 : 64} />
+        <circle class="mark" cx={x + 20} cy={i % 2 ? 38 : 64} r="2.5" />
+        {i < 3 && <line class="s2" x1={x + 28} y1="51" x2={x + 40} y2="51" />}
+      </g>)}
+      <polyline class="s2 link" points="8,86 32,70 56,82 80,62 104,72 128,48 152,58 180,34" />
     </>
   ) : kind === 'win' ? (
     <>

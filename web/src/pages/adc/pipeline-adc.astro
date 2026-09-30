@@ -1,0 +1,12 @@
+---
+import Base from '../../layouts/Base.astro';
+import PipelineAdc from '../../illustrations/pipeline/PipelineAdc.svelte';
+import '../../styles/illustration.css';
+---
+<Base
+  title="Pipeline ADC"
+  description="Step through a 1.5-bit-per-stage pipeline ADC and see the sub-ADC decision, DAC subtraction, residue gain and digital redundancy correction at every stage."
+>
+  <PipelineAdc client:load />
+</Base>
+

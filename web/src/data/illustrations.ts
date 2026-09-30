@@ -4,7 +4,7 @@ export interface Illustration {
   href: string;
   title: string;
   summary: string;
-  thumb: 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
+  thumb: 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
   /** Whose site this is, for a page that is not on this one; it opens in a tab of its own. */
   external?: string;
   /** Public catalog label; assigned only after a lesson passes the editorial gate. */
@@ -59,6 +59,12 @@ export const topics: Topic[] = [
         title: 'Binary vs redundant SAR',
         summary: 'Explore SAR decisions, redundancy and weight calibration.',
         thumb: 'sar',
+      },
+      {
+        href: '/adc/pipeline-adc/',
+        title: 'Pipeline ADC',
+        summary: 'Step through residue amplification and digital redundancy stage by stage.',
+        thumb: 'pipeline',
       },
       {
         href: '/adc/how-much-training/',
