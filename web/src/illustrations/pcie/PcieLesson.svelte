@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { isLightTheme } from '../../lib/theme';
   import Range from '../../components/ui/Range.svelte';
   import Segmented from '../../components/ui/Segmented.svelte';
   import { nf } from '../../lib/format';
@@ -88,7 +89,7 @@
   let playing = $state(true), speed = $state(40), labels = $state(true), spin = $state(false);
   let view = $state<PcieView | null>('board'), shown = $state<PcieView>('board');
   let tour = $state(0), tourOpen = $state(true);
-  let light = $state(false), noGl = $state(false);
+  let light = $state(true), noGl = $state(false);
   let host: HTMLDivElement | undefined = $state();
   let readout = $state({ delivered: 0, sent: 0, resent: 0, naks: 0, measured: 0 });
 
@@ -171,10 +172,9 @@
   onMount(() => {
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) playing = false;
-    const isLight = () => document.documentElement.classList.contains('light');
-    light = isLight();
+    light = isLightTheme();
     const themeWatch = new MutationObserver(() => {
-      light = isLight();
+      light = isLightTheme();
       scene?.setTheme(light);
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -235,7 +235,7 @@
   });
 </script>
 
-<main class="page pcie">
+<main class="page scene-lesson pcie">
   <section class="work">
     <aside class="side" aria-label="Guided tour and settings">
       <section class="tour" aria-label="Guided tour">
@@ -306,7 +306,7 @@
       </section>
       <section>
         <h2 class="label">Key</h2>
-        <ul class="key">
+        <ul class="legend-list">
           <li><i class="bar" style:background={FIELD_COLORS.framing}></i>start of packet + sequence number</li>
           <li><i class="bar" style:background={FIELD_COLORS.header}></i>header · <i class="bar inline" style:background={FIELD_COLORS.replay}></i>header of a resent copy</li>
           <li><i class="bar" style:background={FIELD_COLORS.payload}></i>payload: the data</li>
@@ -391,10 +391,10 @@
   .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-2); }
   .row.start { justify-content: flex-start; gap: 6px; }
   .hint { margin: -2px 0 0; font: 11px/1.45 var(--mono); color: var(--ink-3); }
-  .key { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
-  .key i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
-  .key i.bar { width: 14px; height: 7px; border-radius: 2px; vertical-align: 0; }
-  .key i.inline { margin-left: 4px; }
+  .legend-list { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
+  .legend-list i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
+  .legend-list i.bar { width: 14px; height: 7px; border-radius: 2px; vertical-align: 0; }
+  .legend-list i.inline { margin-left: 4px; }
   .stage { position: relative; min-height: 0; overflow: hidden; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--plot); }
   .stage :global(.pcie-canvas) { position: absolute; inset: 0; display: block; touch-action: none; }
   .stage :global(.pcie-labels) { position: absolute; inset: 0; pointer-events: none; }

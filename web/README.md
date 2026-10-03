@@ -69,7 +69,7 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   offset winds the data edges into a helix and the recovered edge and data samplers turn with them. The loop votes
   early/late decisions over 1–32 UI and applies
   proportional and integral corrections to a 64-step phase interpolator after a set latency; the page shows phase
-  tracking, eyes folded by the recovered and by a free-running clock, cycle slips and bit errors, and the jitter-tolerance
+  tracking, eyes folded by the recovered and by a free-running clock, cycle slips and timing-margin violations, and the jitter-tolerance
   curve found by bisection. `python/serdes_cdr.py` reproduces the simulation bit for bit, random jitter included.
 - **PCI Express** at `/serdes/pci-express/`. A guided eight-step tour of a PCIe link on a 3-D motherboard: lanes as a
   pair each way, bytes dealt across x1–x16, the rate and line code of generations 1–7 (8b/10b, 128b/130b, PAM4 flits),
@@ -117,9 +117,10 @@ Each entry has its own schematic preview so readers can recognize the experiment
 names belong inside the lesson notes. Keep the two-column editorial layout on wide screens and one column on phones.
 
 The shared header and footer, restrained borders, system sans font, Google Sans Code labels and green accent follow
-Analog Design Bench. Plot series use separate blue/amber colors. The theme follows the system until the reader makes
-an explicit choice; that choice is stored locally under a site-specific key. The former generic `theme` key is ignored so
-an old ADC Toolbox preference cannot force the renamed classroom site into dark mode.
+Analog Design Bench. Plot series use separate blue/amber colors. Pages start in light mode unless the reader explicitly
+chooses dark mode; that choice is stored locally under a site-specific key. The theme is applied before both the first
+paint and Astro navigation swaps, so WebGL scenes and eye diagrams match the page without a refresh. The former generic
+`theme` key is ignored.
 
 ## Numerical verification
 

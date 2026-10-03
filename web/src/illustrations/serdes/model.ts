@@ -267,6 +267,7 @@ export interface LinkSettings {
 }
 
 export interface LinkAnalysis {
+  txFfe: boolean;
   gdc: number;
   gdc2: number;
   /** VGA gain that puts the signal rms at 0.3 of ADC full scale. */
@@ -353,6 +354,7 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
   const { th2, xt2, adc2, j2 } = best.nz;
   const ct = [stage.ctle(best.g, best.g2)];
   return {
+    txFfe: s.txFfe,
     gdc: best.g,
     gdc2: best.g2,
     vga: best.vga,
@@ -373,6 +375,16 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
     snr: best.snr,
     stages: { channel, rx: best.rx },
   };
+}
+
+/** TX-symbol to ADC-input gain: digital TX FFE, driver/channel, CTLE and VGA. */
+export function adcResponseDb(a: LinkAnalysis, f: number): number {
+  const th = 2 * Math.PI * f * UI;
+  const c = a.txFfe ? TX_FFE : [0, 1, 0];
+  const re = c[1] + (c[0] + c[2]) * Math.cos(th);
+  const im = (c[0] - c[2]) * Math.sin(th);
+  return responseDb(a.stages.channel.concat(a.stages.rx), f)
+    + 20 * Math.log10(a.vga * Math.hypot(re, im));
 }
 
 /** Pulse responses along the line (0 … 1 of its length, 16 steps), without the CTLE, for the travelling waveform. */

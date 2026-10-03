@@ -126,8 +126,8 @@ export class SerdesScene {
     this.labels.domElement.className = 'serdes-labels';
     host.appendChild(this.labels.domElement);
 
-    this.scene.background = new THREE.Color(THEMES.dark.bg);
-    this.scene.fog = new THREE.Fog(THEMES.dark.bg, 420, 1300);
+    this.scene.background = new THREE.Color(THEMES.light.bg);
+    this.scene.fog = new THREE.Fog(THEMES.light.bg, 420, 1300);
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = this.pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.add(this.hemi);
@@ -146,7 +146,7 @@ export class SerdesScene {
     this.floorCanvas.width = this.floorCanvas.height = 512;
     this.floorTex = new THREE.CanvasTexture(this.floorCanvas);
     this.floorTex.colorSpace = THREE.SRGBColorSpace;
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(1400, 72), new THREE.MeshBasicMaterial({ map: this.floorTex }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(1400, 72), new THREE.MeshBasicMaterial({ map: this.floorTex, toneMapped: false }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = FLOOR_Y - 0.05;
     this.scene.add(floor);

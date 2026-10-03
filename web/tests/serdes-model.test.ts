@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  FN, NF, NFPRE, OS, PRE, Prbs13, analyzeLink, berOf, lineResponses, metrics, pulse, responseDb, stage, type LinkSettings,
+  FN, NF, NFPRE, OS, PRE, Prbs13, adcResponseDb, analyzeLink, berOf, lineResponses, metrics, pulse, responseDb, stage, type LinkSettings,
 } from '../src/illustrations/serdes/model';
 import { EyeStream, Receiver, SymbolStream } from '../src/illustrations/serdes/streams';
 
@@ -74,6 +74,20 @@ describe('112G PAM4 link model', () => {
 
   it('computes the Gray-coded PAM4 BER from the Gaussian tail', () => {
     expect(berOf(5 * 9)).toBeCloseTo(0.75 * 0.0013498980316301, 9);
+  });
+
+  it('includes the VGA and TX FFE in the displayed ADC response', () => {
+    for (const txFfe of [false, true]) {
+      const a = analyzeLink({ ...DEFAULT, txFfe });
+      const analog = a.stages.channel.concat(a.stages.rx);
+      // The preset sums to 0.5 at DC and has unit gain at Nyquist.
+      expect(adcResponseDb(a, 0) - responseDb(analog, 0)).toBeCloseTo(20 * Math.log10(a.vga * (txFfe ? 0.5 : 1)), 9);
+      expect(adcResponseDb(a, FN) - responseDb(analog, FN)).toBeCloseTo(20 * Math.log10(a.vga), 9);
+      // Doubling VGA must move the entire response up by 6.02 dB.
+      for (const f of [0, 7e9, 14e9, FN, 56e9]) {
+        expect(adcResponseDb({ ...a, vga: a.vga * 2 }, f) - adcResponseDb(a, f)).toBeCloseTo(20 * Math.log10(2), 9);
+      }
+    }
   });
 
   it('generates PRBS13Q with period 8191 and the reference level counts', () => {

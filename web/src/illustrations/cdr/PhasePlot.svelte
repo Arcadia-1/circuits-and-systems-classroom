@@ -1,9 +1,10 @@
 <script lang="ts">
   import Plot from '../../components/chart/Plot.svelte';
+  import { niceStep } from '../../lib/scale';
 
   /** Input phase and recovered phase over the last `input.length` UI, oldest first, in UI. */
   let { input, recovered, span }: { input: Float32Array; recovered: Float32Array; span: number } = $props();
-  const left = 40, right = 8, top = 8, bottom = 20;
+  const left = 54, right = 8, top = 18, bottom = 24;
   const range = $derived.by(() => {
     let lo = Infinity, hi = -Infinity;
     for (const arr of [input, recovered]) for (const v of arr) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
@@ -12,7 +13,7 @@
     return { lo: lo - pad, hi: hi + pad };
   });
   const ticks = $derived.by(() => {
-    const span = range.hi - range.lo, step = span > 8 ? 2 : span > 4 ? 1 : span > 1.6 ? 0.5 : 0.25;
+    const span = range.hi - range.lo, step = niceStep(span / 4);
     const out: number[] = [];
     for (let v = Math.ceil(range.lo / step) * step; v <= range.hi; v += step) out.push(Number(v.toFixed(3)));
     return out;
@@ -29,6 +30,7 @@
 <Plot label="Input phase and recovered clock phase over time">
   {#snippet children({ width: w, height: h })}
     {#if w > 0 && h > 60}
+      <text class="tx" x={left} y="11">phase / UI</text>
       {#each ticks as v (v)}
         <line class="gr" x1={left} x2={w - right} y1={y(v, h)} y2={y(v, h)} />
         <text class="tx" text-anchor="end" x={left - 6} y={y(v, h) + 4}>{v}</text>

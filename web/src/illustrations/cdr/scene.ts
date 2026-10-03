@@ -22,9 +22,9 @@ const THEMES = {
 };
 const VIEWS: Record<CdrView, [[number, number, number], [number, number, number]]> = {
   belt: [[BX, 11, 40], [BX, 1.8, 0]],
-  tunnel: [[-6, 17, 36], [0, 8, 5]],
+  tunnel: [[-6, 17, 36], [0, 10, 0]],
   wheel: [[0.01, 44, 6], [0, H, 0]],
-  loop: [[0, 10, 34], [0, 1, R + 6]],
+  loop: [[0, 26, 41], [0, 1, R + 9]],
 };
 
 interface Token { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number }
@@ -34,6 +34,9 @@ export class CdrScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly labels: CSS2DRenderer;
   private readonly scene = new THREE.Scene();
+  private readonly beltRoot = new THREE.Group();
+  private readonly tunnelRoot = new THREE.Group();
+  private readonly loopRoot = new THREE.Group();
   private readonly camera = new THREE.PerspectiveCamera(38, 1, 1, 2000);
   private readonly controls: OrbitControls;
   private readonly pmrem: THREE.PMREMGenerator;
@@ -73,12 +76,13 @@ export class CdrScene {
   private readonly v3 = new THREE.Vector3();
   private readonly qi = new THREE.Quaternion();
   private readonly s3 = new THREE.Vector3();
-  private readonly labelList: { wrap: HTMLDivElement; world: THREE.Vector3; lod: number; far: boolean }[] = [];
+  private readonly labelList: { wrap: HTMLDivElement; world: THREE.Vector3; lod: number; group: 'belt' | 'tunnel' | 'loop' }[] = [];
   private readonly pd = new THREE.Vector3(-4, 1.6, R + 6);
   private readonly lf = new THREE.Vector3(4, 1.6, R + 6);
   private tween: { p0: THREE.Vector3; t0: THREE.Vector3; p1: THREE.Vector3; t1: THREE.Vector3; k: number; dur: number } | null = null;
   /** The view the camera was sent to, kept fitted to the stage until the user moves the camera. */
   private current: CdrView | null = 'belt';
+  private activeView: CdrView = 'belt';
   private spin: boolean;
   private frame = 0;
   private lastUpdate = -1;
@@ -99,8 +103,8 @@ export class CdrScene {
     this.labels.domElement.className = 'cdr-labels';
     host.appendChild(this.labels.domElement);
 
-    this.scene.background = new THREE.Color(THEMES.dark.bg);
-    this.scene.fog = new THREE.Fog(THEMES.dark.bg, 160, 520);
+    this.scene.background = new THREE.Color(THEMES.light.bg);
+    this.scene.fog = new THREE.Fog(THEMES.light.bg, 160, 520);
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = this.pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.add(this.hemi);
@@ -116,7 +120,7 @@ export class CdrScene {
     this.floorCanvas.width = this.floorCanvas.height = 512;
     this.floorTex = new THREE.CanvasTexture(this.floorCanvas);
     this.floorTex.colorSpace = THREE.SRGBColorSpace;
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(600, 64), new THREE.MeshBasicMaterial({ map: this.floorTex }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(600, 64), new THREE.MeshBasicMaterial({ map: this.floorTex, toneMapped: false }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.62;
     this.scene.add(floor);
@@ -133,44 +137,47 @@ export class CdrScene {
     gm.depthWrite = false;
     this.scene.add(this.grid);
 
+    this.scene.add(this.beltRoot, this.tunnelRoot, this.loopRoot);
+    this.tunnelRoot.visible = this.loopRoot.visible = false;
+
     // tunnel shell, time rings every 100 UI, phase guides at 0, ¼, ½, ¾ UI, and the rim where "now" is
     const shell = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H, 96, 1, true), this.glassMat);
     shell.position.y = H / 2;
-    this.scene.add(shell);
+    this.tunnelRoot.add(shell);
     for (let k = 0; k <= WINDOW; k += 100) {
       const pts = Array.from({ length: 97 }, (_, i) => new THREE.Vector3(R * Math.cos((i / 96) * 2 * Math.PI), k * DY, R * Math.sin((i / 96) * 2 * Math.PI)));
-      this.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), this.guideMat));
+      this.tunnelRoot.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), this.guideMat));
     }
     for (let q = 0; q < 4; q++) {
       const a = (q / 4) * 2 * Math.PI;
-      this.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(R * Math.cos(a), 0, R * Math.sin(a)), new THREE.Vector3(R * Math.cos(a), H, R * Math.sin(a))]), this.guideMat));
+      this.tunnelRoot.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(R * Math.cos(a), 0, R * Math.sin(a)), new THREE.Vector3(R * Math.cos(a), H, R * Math.sin(a))]), this.guideMat));
     }
     const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.1, 10, 128), this.ringMat);
     rim.rotation.x = Math.PI / 2;
     rim.position.y = H;
-    this.scene.add(rim);
+    this.tunnelRoot.add(rim);
     const ticks = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.08, 0.7), this.ringMat, 16);
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * 2 * Math.PI;
       this.m4.compose(new THREE.Vector3((R + 0.45) * Math.cos(a), H, (R + 0.45) * Math.sin(a)), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a + Math.PI / 2), new THREE.Vector3(1, 1, i % 4 === 0 ? 1.6 : 1));
       ticks.setMatrixAt(i, this.m4);
     }
-    this.scene.add(ticks);
+    this.tunnelRoot.add(ticks);
     const base = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.8, R + 1.1, 0.6, 96), new THREE.MeshStandardMaterial({ color: 0x2a3140, roughness: 0.5, metalness: 0.4 }));
     base.position.y = -0.3;
     base.receiveShadow = true;
-    this.scene.add(base);
+    this.tunnelRoot.add(base);
 
     this.dots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.15, 8, 6), new THREE.MeshBasicMaterial({ toneMapped: false }), WINDOW);
     for (let i = 0; i < WINDOW; i++) this.dots.setColorAt(i, this.colors.late);
     this.dots.count = 0;
     this.dots.frustumCulled = false;
-    this.scene.add(this.dots);
+    this.tunnelRoot.add(this.dots);
     this.edgeStripe = this.stripeMesh(COLORS.edgeSampler, 0.9);
     this.dataStripe = this.stripeMesh(COLORS.dataSampler, 0.95);
     this.band = new THREE.Mesh(this.gridGeometry(STRIPES, BAND_SEG), new THREE.MeshBasicMaterial({ color: COLORS.error, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
     this.band.frustumCulled = false;
-    this.scene.add(this.band);
+    this.tunnelRoot.add(this.band);
     for (const c of [COLORS.edgeSampler, COLORS.dataSampler]) {
       const g = new THREE.Group();
       const hand = new THREE.Mesh(new THREE.BoxGeometry(R - 0.4, 0.12, 0.12), new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
@@ -180,7 +187,7 @@ export class CdrScene {
       tip.position.x = R;
       g.add(tip);
       g.position.y = H;
-      this.scene.add(g);
+      this.tunnelRoot.add(g);
       this.needles.push(g);
     }
     this.buildLoop();
@@ -200,10 +207,6 @@ export class CdrScene {
     const start = this.pose('belt');
     this.controls.target.copy(start.tgt);
     this.camera.position.copy(start.pos);
-    if (!this.reduced) {
-      this.camera.position.add(new THREE.Vector3(-12, 14, 26));
-      this.flyTo('belt', 2.2);
-    }
   }
 
   setTheme(light: boolean): void {
@@ -247,18 +250,35 @@ export class CdrScene {
   }
   flyTo(view: CdrView, dur = 1.3): void {
     this.current = view;
+    this.activeView = view;
+    this.beltRoot.visible = view === 'belt';
+    this.tunnelRoot.visible = view === 'tunnel' || view === 'wheel';
+    this.loopRoot.visible = view === 'loop';
     const { pos, tgt } = this.pose(view);
     this.tween = { p0: this.camera.position.clone(), t0: this.controls.target.clone(), p1: pos, t1: tgt, k: 0, dur: this.reduced ? 0.001 : dur };
   }
-  /** Camera for a view; the tunnel view backs off until the tunnel and the loop in front of it both fit. */
+  /** Fit the whole teaching diagram, including room for its labels, at every aspect ratio. */
   private pose(view: CdrView): { pos: THREE.Vector3; tgt: THREE.Vector3 } {
     const [p, t] = VIEWS[view], tgt = new THREE.Vector3(...t);
-    if (view !== 'tunnel' && view !== 'belt') return { pos: new THREE.Vector3(...p), tgt };
-    const w = this.host.clientWidth || 800, h = this.host.clientHeight || 600, tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    // a narrow stage shows fewer bits of the belt rather than shrinking them
-    const beltHalf = w < h ? 11 : SPAN * L + 3;
-    const dist = view === 'belt' ? Math.max(8 / tan, beltHalf / (tan * (w / h))) : Math.max(14 / tan, 17 / (tan * (w / h))) * 0.95;
-    return { pos: tgt.clone().addScaledVector(new THREE.Vector3(...p).sub(tgt).normalize(), dist), tgt };
+    const bounds: Record<CdrView, [number[], number[]]> = {
+      belt: [[BX - SPAN * L - 3, -1, -5], [BX + SPAN * L + 3, 9, 5]],
+      tunnel: [[-12, -1, -12], [12, 24, 12]],
+      wheel: [[-12, 0, -12], [12, 23, 12]],
+      loop: [[-16, -1, 10], [17, 7, 23]],
+    };
+    const w = this.host.clientWidth || 800, h = this.host.clientHeight || 600;
+    const tanY = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const tanX = tanY * w / h;
+    const direction = new THREE.Vector3(...p).sub(tgt).normalize();
+    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction).normalize();
+    const up = new THREE.Vector3().crossVectors(direction, right);
+    const [lo, hi] = bounds[view];
+    let distance = 8;
+    for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) {
+      const v = new THREE.Vector3(x, y, z).sub(tgt), depth = v.dot(direction);
+      distance = Math.max(distance, depth + Math.abs(v.dot(right)) / (tanX * 0.8), depth + Math.abs(v.dot(up)) / (tanY * 0.78));
+    }
+    return { pos: tgt.clone().addScaledVector(direction, distance), tgt };
   }
 
   /** Draw the history at display time `now` (UI); `updates` counts loop updates so a token can leave the phase detector. */
@@ -306,17 +326,26 @@ export class CdrScene {
     }
     this.controls.autoRotate = this.spin && !this.tween;
     this.controls.update(dt);
-    if (this.frame % 4 === 0) {
-      for (const l of this.labelList) {
-        const far = this.camera.position.distanceTo(l.world) > l.lod;
-        if (far !== l.far) {
-          l.far = far;
-          l.wrap.classList.toggle('far', far);
-        }
-      }
-    }
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
+    if (this.frame % 4 === 0) this.layoutLabels();
+  }
+
+  private layoutLabels(): void {
+    const box = this.host.getBoundingClientRect();
+    const occupied: DOMRect[] = [];
+    for (const l of this.labelList) {
+      const relevant = this.activeView === 'belt' ? l.group === 'belt'
+        : this.activeView === 'loop' ? l.group === 'loop'
+        : this.activeView === 'wheel' ? l.group === 'tunnel'
+        : l.group === 'tunnel';
+      const r = l.wrap.getBoundingClientRect();
+      const inside = r.left >= box.left + 6 && r.right <= box.right - 6 && r.top >= box.top + 66 && r.bottom <= box.bottom - 8;
+      const overlap = occupied.some((o) => r.left < o.right + 5 && r.right > o.left - 5 && r.top < o.bottom + 4 && r.bottom > o.top - 4);
+      const show = relevant && inside && !overlap && this.camera.position.distanceTo(l.world) <= l.lod;
+      l.wrap.style.visibility = show ? 'visible' : 'hidden';
+      if (show) occupied.push(r);
+    }
   }
 
   dispose(): void {
@@ -372,7 +401,7 @@ export class CdrScene {
     const m = new THREE.Mesh(this.gridGeometry(STRIPES, 1), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, toneMapped: false }));
     m.frustumCulled = false;
     m.renderOrder = 2;
-    this.scene.add(m);
+    this.tunnelRoot.add(m);
     return m;
   }
   private fillStripe(geo: THREE.BufferGeometry, at: (s: number) => { theta: number; y: number }, offset: number, halfWidth: number, radius: number, seg = 1): void {
@@ -394,7 +423,7 @@ export class CdrScene {
     m.position.set(x, h / 2, z);
     m.castShadow = m.receiveShadow = true;
     m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x06090d, transparent: true, opacity: 0.35 })));
-    this.scene.add(m);
+    this.loopRoot.add(m);
     return m;
   }
   private buildLoop(): void {
@@ -408,30 +437,29 @@ export class CdrScene {
     const tube = (pts: THREE.Vector3[]) => {
       const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.05), 48, 0.1, 8, false), flow);
       m.castShadow = true;
-      this.scene.add(m);
+      this.loopRoot.add(m);
     };
     tube([new THREE.Vector3(-9.5, 0.8, z), new THREE.Vector3(-6.5, 0.8, z)]);
     tube([new THREE.Vector3(-1.5, 0.8, z), new THREE.Vector3(1.5, 0.8, z)]);
     tube([new THREE.Vector3(6.5, 0.8, z), new THREE.Vector3(9.5, 0.8, z)]);
     tube([new THREE.Vector3(12, 0.6, z + 5.2), new THREE.Vector3(12, 0.6, z + 1.6)]);
     tube([new THREE.Vector3(12, 0.6, z - 1.6), new THREE.Vector3(12, 0.6, z - 3.2), new THREE.Vector3(-12, 0.6, z - 3.2), new THREE.Vector3(-12, 0.6, z - 1.6)]);
-    tube([new THREE.Vector3(-12, 1.4, z - 1.6), new THREE.Vector3(-10, 6, z - 5), new THREE.Vector3(-R * 0.8, H, R * 0.62)]);
     // integrator gauge on the loop filter and the phase-interpolator dial
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.9, 4.8, 0.9), new THREE.MeshStandardMaterial({ color: 0x1b2230, transparent: true, opacity: 0.35 }));
     post.position.set(5.6, 1.4, z);
-    this.scene.add(post);
+    this.loopRoot.add(post);
     this.gauge = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1, 0.7), new THREE.MeshStandardMaterial({ color: 0xa28bff, emissive: 0x2d1f73, roughness: 0.4 }));
     this.gauge.position.set(5.6, 1.4, z);
-    this.scene.add(this.gauge);
+    this.loopRoot.add(this.gauge);
     const dial = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.08, 8, 64), this.ringMat);
     dial.rotation.x = Math.PI / 2;
     dial.position.set(12, 1.35, z);
-    this.scene.add(dial);
+    this.loopRoot.add(dial);
     const hand = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 0.12), new THREE.MeshBasicMaterial({ color: COLORS.dataSampler, toneMapped: false }));
     hand.position.x = 0.7;
     this.piNeedle.add(hand);
     this.piNeedle.position.set(12, 1.4, z);
-    this.scene.add(this.piNeedle);
+    this.loopRoot.add(this.piNeedle);
   }
   /* ------------------------------------------------------------------ the conveyor belt */
 
@@ -440,12 +468,12 @@ export class CdrScene {
     const belt = new THREE.Mesh(new THREE.BoxGeometry(len, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x1c2230, roughness: 0.85 }));
     belt.position.set(BX, -0.25, 0);
     belt.receiveShadow = true;
-    this.scene.add(belt);
+    this.beltRoot.add(belt);
     for (const sx of [-1, 1]) {
       const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 6.4, 24), this.ringMat);
       roller.rotation.x = Math.PI / 2;
       roller.position.set(BX + sx * (len / 2), -0.3, 0);
-      this.scene.add(roller);
+      this.beltRoot.add(roller);
     }
     this.blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.1 }), 2 * SPAN + 8);
     this.dataStamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshBasicMaterial({ toneMapped: false }), 2 * SPAN + 8);
@@ -455,18 +483,18 @@ export class CdrScene {
       m.count = 0;
       m.frustumCulled = false;
       m.castShadow = m === this.blocks;
-      this.scene.add(m);
+      this.beltRoot.add(m);
     }
     // the reading station: an arm from behind the belt, so nothing stands between the camera and the heads
     const metal = new THREE.MeshStandardMaterial({ color: 0x6b7788, roughness: 0.4, metalness: 0.6 });
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 5.7, 0.5), metal);
     post.position.set(BX, 2.85, -3.8);
     post.castShadow = true;
-    this.scene.add(post);
+    this.beltRoot.add(post);
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 5.9), metal);
     bar.position.set(BX, 5.4, -1.1);
     bar.castShadow = true;
-    this.scene.add(bar);
+    this.beltRoot.add(bar);
     const head = (group: THREE.Group, z: number, mat: THREE.MeshBasicMaterial) => {
       const cone = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 20), mat);
       cone.rotation.x = Math.PI;
@@ -475,7 +503,7 @@ export class CdrScene {
       const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 4.1, 8), new THREE.MeshBasicMaterial({ color: mat.color, transparent: true, opacity: 0, toneMapped: false }));
       beam.position.set(BX, 2.05, z);
       group.add(beam);
-      this.scene.add(group);
+      this.beltRoot.add(group);
       return beam;
     };
     this.readerBeam = head(new THREE.Group(), -1.2, new THREE.MeshBasicMaterial({ color: COLORS.dataSampler, toneMapped: false }));
@@ -494,12 +522,12 @@ export class CdrScene {
     hand.position.x = 0.42;
     this.knob.add(hand);
     this.knob.position.set(BX, 5.8, 0);
-    this.scene.add(this.knob);
+    this.beltRoot.add(this.knob);
     for (let i = 0; i < SPAN + 3; i++) {
       const el = document.createElement('div'), o = new CSS2DObject(el);
       el.className = 'cdr-bit';
       o.visible = false;
-      this.scene.add(o);
+      this.beltRoot.add(o);
       this.reads.push({ o, el, text: '' });
     }
   }
@@ -599,9 +627,9 @@ export class CdrScene {
   }
 
   private updateTokens(dt: number, updates: number, vote: number): void {
-    if (updates !== this.lastUpdate && vote !== 0 && this.tokens.length < 6) {
+    if (this.cdrOn && updates !== this.lastUpdate && vote !== 0 && this.tokens.length < 6) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ color: vote > 0 ? COLORS.early : COLORS.late, toneMapped: false }));
-      this.scene.add(m);
+      this.loopRoot.add(m);
       this.tokens.push({ mesh: m, from: this.pd.clone(), to: this.lf.clone(), t: 0 });
     }
     this.lastUpdate = updates;
@@ -610,7 +638,7 @@ export class CdrScene {
       tk.t += dt / 0.6;
       tk.mesh.position.lerpVectors(tk.from, tk.to, Math.min(1, tk.t)).setY(1.6 + 0.8 * Math.sin(Math.PI * Math.min(1, tk.t)));
       if (tk.t >= 1) {
-        this.scene.remove(tk.mesh);
+        this.loopRoot.remove(tk.mesh);
         tk.mesh.geometry.dispose();
         (tk.mesh.material as THREE.Material).dispose();
         this.tokens.splice(i, 1);
@@ -624,8 +652,9 @@ export class CdrScene {
     wrap.append(el);
     const o = new CSS2DObject(wrap);
     o.position.copy(pos);
-    this.scene.add(o);
-    this.labelList.push({ wrap, world: pos.clone(), lod, far: false });
+    const group = pos.x > BX / 2 ? 'belt' : pos.z >= R + 5 ? 'loop' : 'tunnel';
+    (group === 'belt' ? this.beltRoot : group === 'loop' ? this.loopRoot : this.tunnelRoot).add(o);
+    this.labelList.push({ wrap, world: pos.clone(), lod, group });
     return el;
   }
   private buildLabels(): void {
@@ -637,14 +666,14 @@ export class CdrScene {
     this.cdrLabels.push(this.label('Timing knob', new THREE.Vector3(BX + 2.6, 6.6, 0), 160));
     this.label('now', new THREE.Vector3(0, H + 1.3, 0));
     this.label('0', new THREE.Vector3(R + 1.8, H, 0), 1e9, 'tick');
-    this.label('¼ UI', new THREE.Vector3(0, H, R + 1.8), 1e9, 'tick');
-    this.label('½ UI', new THREE.Vector3(-R - 1.8, H, 0), 1e9, 'tick');
-    this.label('¾ UI', new THREE.Vector3(0, H, -R - 1.8), 1e9, 'tick');
+    this.label('0.25 UI', new THREE.Vector3(0, H, R + 1.8), 1e9, 'tick');
+    this.label('0.5 UI', new THREE.Vector3(-R - 1.8, H, 0), 1e9, 'tick');
+    this.label('0.75 UI', new THREE.Vector3(0, H, -R - 1.8), 1e9, 'tick');
     this.label(`time ↑ · last ${WINDOW} UI`, new THREE.Vector3(-R - 1.2, H * 0.45, R * 0.3));
-    this.label('Samplers · data + edge', new THREE.Vector3(-12, 2.6, z), 200);
-    this.label('Bang-bang PD', new THREE.Vector3(-4, 2.6, z), 200);
-    this.label('Loop filter · P + I', new THREE.Vector3(4, 4.2, z), 200);
-    this.label(`Phase interpolator · ${NPI} steps`, new THREE.Vector3(12, 4.4, z), 200);
-    this.label('PLL · 8 phases', new THREE.Vector3(12, 2.2, z + 6.5), 200);
+    this.label('Samplers', new THREE.Vector3(-12, 2.6, z), 200);
+    this.label('Early / late', new THREE.Vector3(-4, 2.6, z), 200);
+    this.label('P + I filter', new THREE.Vector3(4, 4.2, z), 200);
+    this.label(`${NPI}-step PI`, new THREE.Vector3(12, 4.4, z), 200);
+    this.label('8-phase PLL', new THREE.Vector3(12, 2.2, z + 6.5), 200);
   }
 }

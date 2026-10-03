@@ -4,6 +4,17 @@
 
 /* Shared with the Analog Design Bench visual family. Plot series stay distinct from navigation. */
 :root {
+  color-scheme: light;
+  --ground: #f6f8fa; --plot: #ffffff; --ink: #17212e; --ink-2: #55637a; --ink-3: #65748a;
+  --rule: #d9e0e9; --rule-soft: #e5eaf1; --grid: #e5eaf1; --chip: #edf1f6; --ghost: #b5bfcd;
+  --brand: #087f58; --brand-soft: #d9f4e8; --focus: #087f58;
+  --s1: #246dc1; --s2: #b36916; --s1-soft: rgba(36, 109, 193, 0.09); --s2-soft: rgba(179, 105, 22, 0.09); --bad: #c2495c;
+  --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'Google Sans Code Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+  --math: 'STIX Two Text', 'Times New Roman', Times, serif;
+}
+
+:root.dark {
   color-scheme: dark;
   --ground: #0a0d13;
   --plot: #0e131b;
@@ -23,28 +34,6 @@
   --s1-soft: rgba(102, 170, 255, 0.12);
   --s2-soft: rgba(240, 180, 92, 0.12);
   --bad: #f27d8a;
-  --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --mono: 'Google Sans Code Variable', ui-monospace, 'SF Mono', Menlo, monospace;
-  --math: 'STIX Two Text', 'Times New Roman', Times, serif;
-}
-
-/* Let CSS choose the system theme before JavaScript or web fonts have loaded. */
-@media (prefers-color-scheme: light) {
-  :root:not(.dark) {
-    color-scheme: light;
-    --ground: #f6f8fa; --plot: #ffffff; --ink: #17212e; --ink-2: #55637a; --ink-3: #65748a;
-    --rule: #d9e0e9; --rule-soft: #e5eaf1; --grid: #e5eaf1; --chip: #edf1f6; --ghost: #b5bfcd;
-    --brand: #087f58; --brand-soft: #d9f4e8; --focus: #087f58;
-    --s1: #246dc1; --s2: #b36916; --s1-soft: rgba(36, 109, 193, 0.09); --s2-soft: rgba(179, 105, 22, 0.09); --bad: #c2495c;
-  }
-}
-
-:root.light {
-  color-scheme: light;
-  --ground: #f6f8fa; --plot: #ffffff; --ink: #17212e; --ink-2: #55637a; --ink-3: #65748a;
-  --rule: #d9e0e9; --rule-soft: #e5eaf1; --grid: #e5eaf1; --chip: #edf1f6; --ghost: #b5bfcd;
-  --brand: #087f58; --brand-soft: #d9f4e8; --focus: #087f58;
-  --s1: #246dc1; --s2: #b36916; --s1-soft: rgba(36, 109, 193, 0.09); --s2-soft: rgba(179, 105, 22, 0.09); --bad: #c2495c;
 }
 
 *, *::before, *::after { box-sizing: border-box; }

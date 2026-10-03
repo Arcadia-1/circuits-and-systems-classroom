@@ -1,21 +1,29 @@
 <script lang="ts">
   import Plot from '../../components/chart/Plot.svelte';
-  import { FN, responseDb, type LinkAnalysis } from './model';
+  import { FN, adcResponseDb, responseDb, type LinkAnalysis } from './model';
+  import { niceStep } from '../../lib/scale';
 
   let { a }: { a: LinkAnalysis } = $props();
-  const left = 38, right = 10, top = 10, lo = -50, hi = 10, fmax = 56e9;
-  const ticks = [-50, -40, -30, -20, -10, 0, 10];
+  const left = 42, right = 10, top = 10, fmax = 56e9;
   const freqs = [0, 14, 28, 42, 56];
   const curves = $derived.by(() => {
-    const channel = a.stages.channel.slice(1), ctle = [a.stages.rx[1]], link = a.stages.channel.concat(a.stages.rx);
-    const sample = (st: typeof link) => Array.from({ length: 113 }, (_, i) => {
-      const f = Math.max(1e7, i * 0.5e9);
-      return [f, responseDb(st, f)] as const;
+    const channel = a.stages.channel.slice(1), ctle = [a.stages.rx[1]];
+    const sample = (gain: (f: number) => number) => Array.from({ length: 113 }, (_, i) => {
+      const f = i * 0.5e9;
+      return [f, gain(f)] as const;
     });
-    return { channel: sample(channel), ctle: sample(ctle), link: sample(link), atFn: [responseDb(channel, FN), responseDb(ctle, FN), responseDb(link, FN)] };
+    return { channel: sample((f) => responseDb(channel, f)), ctle: sample((f) => responseDb(ctle, f)), link: sample((f) => adcResponseDb(a, f)), atFn: [responseDb(channel, FN), responseDb(ctle, FN), adcResponseDb(a, FN)] };
+  });
+  const bounds = $derived.by(() => {
+    const values = [...curves.channel, ...curves.ctle, ...curves.link].map((p) => p[1]);
+    return { lo: Math.floor(Math.min(-10, ...values) / 10) * 10, hi: Math.ceil(Math.max(10, ...values) / 10) * 10 };
+  });
+  const ticks = $derived.by(() => {
+    const step = niceStep((bounds.hi - bounds.lo) / 5);
+    return Array.from({ length: Math.floor((bounds.hi - bounds.lo) / step) + 1 }, (_, i) => bounds.lo + i * step);
   });
   const x = (f: number, w: number) => left + (f / fmax) * Math.max(1, w - left - right);
-  const y = (db: number, h: number) => top + ((hi - Math.min(hi, Math.max(lo - 4, db))) / (hi - lo)) * Math.max(1, h - top - 22);
+  const y = (db: number, h: number) => top + ((bounds.hi - db) / (bounds.hi - bounds.lo)) * Math.max(1, h - top - 22);
   const path = (pts: readonly (readonly [number, number])[], w: number, h: number) => pts.map(([f, db], i) => `${i ? 'L' : 'M'}${x(f, w).toFixed(1)},${y(db, h).toFixed(1)}`).join('');
 </script>
 

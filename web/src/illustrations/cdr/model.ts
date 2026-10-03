@@ -209,7 +209,7 @@ export class CdrSim {
 export const JTOL_HZ = [2e6, 5e6, 10e6, 20e6, 50e6, 100e6, 200e6, 500e6, 1e9];
 
 /**
- * Largest sinusoidal jitter (UIpp) that the loop tolerates without a bit error at one frequency: lock for 4000 UI,
+ * Largest sinusoidal jitter (UIpp) with no timing-margin violations at one frequency: lock for 4000 UI,
  * switch the jitter on, run 1.5 periods (at least 4000 UI), and bisect geometrically between 0.02 and 20 UIpp.
  */
 export function jtolAt(s: CdrSettings, hz: number, seed = 7): number {

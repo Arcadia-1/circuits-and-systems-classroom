@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { isLightTheme } from '../../lib/theme';
   import Range from '../../components/ui/Range.svelte';
   import Segmented from '../../components/ui/Segmented.svelte';
   import { freqText, nf } from '../../lib/format';
@@ -60,7 +61,7 @@
     },
     {
       title: 'Keeping up with a clock that is off',
-      body: 'Now the receiver’s clock is 3% fast again. One notch per mark cannot keep up: the dots keep sliding, and every so often the reader slips by a whole bit (a <em>cycle slip</em>). The fix is an <b>integral path</b>: it notices that the marks keep saying the same thing, learns how far off the clock is, and keeps the knob turning at that rate by itself, like cruise control.',
+      body: 'Now the receiver’s clock is 3% fast again. Random data has an edge only about half the time, so proportional corrections alone cannot keep up. The reader slips by whole bits. An <b>integral path</b> learns the clock error and keeps the timing knob turning between edges.',
       look: 'Switch it on. Within a few seconds the dots settle mid-block, and “Learned clock error” on the right climbs to about 30,000 ppm, which is 3%.',
       s: { ...CALM, ...QUICK, ppm: 30000, cdr: true },
       view: 'belt', speed: 5, prefill: 30, action: 'integral',
@@ -74,8 +75,8 @@
     },
     {
       title: 'The real link: 56 billion bits a second',
-      body: 'A real receiver does all of this 11 billion times faster, with a 0.03% clock error, some jitter, and a loop that votes once every 32 bits. The phase tunnel shows the last 800 bits at once: time runs upwards and the angle is the position inside a bit. Dots are data edges, the white stripe is the edge checker, and the green stripe, half a turn away, is the reader.',
-      look: 'The dots hug the white stripe, so the reader stays clear of them. The charts on the right follow the same loop; the controls on the left change it.',
+      body: 'The link runs at 56 billion bits/s. This view shows 800 bits/s: 70 million times slower. The phase tunnel shows the last 800 bits: time runs upwards, and angle is phase inside one bit. Dots are data edges, the grey stripe is the edge checker, and the green stripe, half a turn away, is the reader.',
+      look: 'The dots hug the edge-checker stripe, so the reader stays clear of them. The charts and controls follow the same loop.',
       s: { ...DEFAULTS },
       view: 'tunnel', speed: 800, prefill: 16000,
     },
@@ -86,7 +87,7 @@
   let playing = $state(true), speed = $state(TOUR[0].speed), labels = $state(true), spin = $state(false);
   let view = $state<CdrView | null>('belt'), shown = $state<CdrView>('belt');
   let tour = $state(0), tourOpen = $state(true);
-  let light = $state(false), noGl = $state(false);
+  let light = $state(true), noGl = $state(false);
   let host: HTMLDivElement | undefined = $state();
   let eyeCanvas: HTMLCanvasElement[] = $state([]);
   let jtol = $state.raw<{ hz: number; uipp: number }[] | null>(null);
@@ -97,6 +98,7 @@
   const sjHz = $derived(10 ** sjLog);
   const settings = (): CdrSettings => ({ ppm, sjUipp, sjHz, rjUi: rjMui / 1000, pattern, cdr, kp, integral, kiLog2, decim, latency });
   const pOnlyPpm = $derived((kp / (NPI * decim)) * 1e6);
+  const randomDataPpm = $derived(pOnlyPpm * (1 - 2 ** -decim));
   const int = (v: number) => Math.round(v).toLocaleString('en-US').replace('-', '−');
   const slowText = $derived.by(() => {
     const k = BAUD / speed;
@@ -104,9 +106,9 @@
   });
   const status = $derived(
     !cdr ? (ppm === 0 && sjUipp === 0 ? { s: 'warn', text: 'No CDR · the clocks happen to match' } : { s: 'bad', text: 'No CDR · the reader drifts' })
-    : readout.recentSlips > 0 ? { s: 'bad', text: 'Cycle slips · whole bits lost' }
-    : readout.recentErrors > 0 ? { s: 'warn', text: 'Locked · some bits misread' }
-    : { s: 'good', text: 'Locked · every bit read cleanly' },
+    : readout.recentSlips > 0 ? { s: 'bad', text: 'Cycle slips' }
+    : readout.recentErrors > 0 ? { s: 'warn', text: 'Sampling margin violated' }
+    : { s: 'good', text: 'Tracking · margin clear' },
   );
 
   /** The running loop, the display clock (UI) and a pending push on the clock; plain fields so the frame loop stays out of reactivity. */
@@ -131,7 +133,7 @@
     hist.error[i] = s.error ? 1 : 0;
     hist.transition[i] = s.transition ? 1 : 0;
     hist.end = s.n + 1;
-    inRing[s.n % SPAN] = s.phase;
+    inRing[s.n % SPAN] = s.edge;
     thRing[s.n % SPAN] = s.theta;
     eyes.push(s);
     if (s.n % SNAP === 0) {
@@ -213,10 +215,9 @@
   onMount(() => {
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) playing = false;
-    const isLight = () => document.documentElement.classList.contains('light');
-    light = isLight();
+    light = isLightTheme();
     const themeWatch = new MutationObserver(() => {
-      light = isLight();
+      light = isLightTheme();
       scene?.setTheme(light);
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -259,12 +260,12 @@
       run.ppmAvg += (run.sim.trackedPpm - run.ppmAvg) * (1 - Math.exp(-dt / 0.6));
       scene?.setCdr(cdr);
       scene?.update(dt, hist, run.clock, run.ppmAvg, run.sim.updates, run.sim.lastVote);
-      const styles = [{ corner: 'with CDR' }, { corner: 'fixed clock' }];
+      const styles = [{ corner: cdr ? 'with CDR' : 'loop off' }, { corner: 'fixed clock' }];
       eyeCanvas.forEach((c, i) => c && drawEye(c, i ? eyes.free : eyes.recovered, { light, range: 1.35, amplitude: null, corner: styles[i].corner }));
       if (frame % 6 === 0) {
-        const n = hist.end, count = Math.min(SPAN, n), stride = Math.max(1, Math.floor(count / PLOT_POINTS));
+        const n = hist.end, count = Math.min(SPAN, n), stride = Math.max(1, Math.ceil(count / PLOT_POINTS));
         let sum2 = 0;
-        const input = new Float32Array(Math.floor(count / stride)), recovered = new Float32Array(input.length);
+        const input = new Float32Array(Math.ceil(count / stride)), recovered = new Float32Array(input.length);
         for (let j = 0; j < count; j++) {
           const i = (n - count + j) % SPAN, e = wrap(inRing[i] - thRing[i]);
           sum2 += e * e;
@@ -306,7 +307,7 @@
   }
 </script>
 
-<main class="page cdr">
+<main class="page scene-lesson cdr">
   <section class="work">
     <aside class="side" aria-label="Guided tour and settings">
       <section class="tour" aria-label="Guided tour">
@@ -357,7 +358,7 @@
         {#if integral}<Range id="cdr-ki" bind:value={kiLog2} min={-9} max={-3} step={1} output={`1/${2 ** -kiLog2} step`}>Integral gain</Range>{/if}
         <div class="row"><span>Vote every</span><Segmented size="sm" mono label="Loop update interval in UI" options={[{ value: 1, label: '1' }, { value: 8, label: '8' }, { value: 16, label: '16' }, { value: 32, label: '32' }]} bind:value={decim} /></div>
         <Range id="cdr-lat" bind:value={latency} min={0} max={8} step={1} output={`${latency} vote${latency === 1 ? '' : 's'}`}>Loop latency</Range>
-        <p class="hint">Phase interpolator {NPI} steps per UI · without the integral path the loop follows at most {int(pOnlyPpm)} ppm</p>
+        <p class="hint">P-only slew ceiling: {kp}/({NPI} × {decim}) × 10⁶ = {int(pOnlyPpm)} ppm. Random data: about {int(randomDataPpm)} ppm; long runs of identical bits reduce tracking.</p>
       </section>
       <section>
         <h2 class="label">Playback</h2>
@@ -373,7 +374,7 @@
       <section>
         <h2 class="label">Key</h2>
         {#if shown === 'belt'}
-          <ul class="key">
+          <ul class="legend-list">
             <li><i class="blk"></i>tall block: a 1 · short block: a 0</li>
             <li><i style:background={COLORS.dataSampler}></i>where the reader looked, and the bit it read</li>
             <li><i style:background={COLORS.error}></i>looked too near an edge: the bit may be wrong (?)</li>
@@ -382,10 +383,10 @@
             <li><i class="bar" style:background="#9aa6b2"></i>same bit on both sides: no verdict</li>
           </ul>
         {:else}
-          <ul class="key">
+          <ul class="legend-list">
             <li><i style:background={COLORS.early}></i>edge, clock early</li>
             <li><i style:background={COLORS.late}></i>edge, clock late</li>
-            <li><i style:background={COLORS.error}></i>edge in keep-out: bit error</li>
+            <li><i style:background={COLORS.error}></i>edge in keep-out: timing margin violated</li>
             <li><i class="bar" style:background="var(--ink)"></i>edge checker (recovered clock)</li>
             <li><i class="bar" style:background={COLORS.dataSampler}></i>reader, ½ UI later</li>
             <li><i class="band"></i>eye keep-out, ±{EYE_CLOSURE} UI</li>
@@ -407,10 +408,10 @@
         <div class="metric"><span class="label">Reader off-centre</span><span class="mono big">{nf(readout.rmsMui, 0)}</span><span class="unit">mUI rms</span></div>
         <div class="metric"><span class="label">Learned clock error</span><span class="mono big">{cdr && integral ? int(readout.ppm) : '—'}</span><span class="unit">ppm</span></div>
       </div>
-      <p class="hint">How far the reader sits from the middle of the bits (1000 mUI = one bit), and the clock error the integral path has found.</p>
+      <p class="hint">Wrapped timing error, including random jitter. 1,000 mUI = 1 bit. The integral path estimates the clock offset.</p>
       <div class="line">
         <span class="status" data-s={status.s}>{status.text}</span>
-        <span class="counts mono">{int(readout.slips)} slips · {int(readout.errors)} errors / {int(readout.bits)} bits</span>
+        <span class="counts mono">{int(readout.slips)} slips · {int(readout.errors)} margin violations / {int(readout.bits)} bits</span>
       </div>
       <div class="chart">
         <div class="cap"><span class="label">Phase tracking</span><span><i class="k1"></i>data edges <i class="k2"></i>recovered clock</span></div>
@@ -418,7 +419,7 @@
       </div>
       <p class="hint">Where the data edges are and where the loop puts its clock, in UI. Locked, the lines run together.</p>
       <div class="eyes">
-        <figure><figcaption class="label">Eye · with CDR</figcaption><canvas bind:this={eyeCanvas[0]} use:sized></canvas></figure>
+        <figure><figcaption class="label">Eye · {cdr ? 'with CDR' : 'loop off'}</figcaption><canvas bind:this={eyeCanvas[0]} use:sized></canvas></figure>
         <figure><figcaption class="label">Eye · without</figcaption><canvas bind:this={eyeCanvas[1]} use:sized></canvas></figure>
       </div>
       <p class="hint">Every bit drawn on top of the others, lined up by the clock. An open eye in the middle gives the reader a clean place to look.</p>
@@ -426,7 +427,7 @@
         <div class="cap"><span class="label">Jitter tolerance</span><span><i class="k1"></i>limit <i class="dot"></i>applied</span></div>
         <JtolPlot curve={jtol} {sjHz} {sjUipp} />
       </div>
-      <p class="hint">The largest wobble the loop survives at each wobble rate. Slow wobble is followed, so it may be many bits; fast wobble must fit in the 0.6 UI eye. Below 50 MHz the limit falls 20 dB per decade, because a bang-bang loop moves its clock at most {kp}/({NPI}·{decim}) UI per UI.</p>
+      <p class="hint">{cdr ? 'Finite simulation with no timing-margin violations; not a BER guarantee. Fast jitter must fit inside the 0.6 UI opening. The crossover changes with loop gain, update interval and latency.' : 'Enable the CDR loop to calculate its jitter tolerance.'}</p>
     </aside>
   </section>
 </main>
@@ -464,18 +465,17 @@
   .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-2); }
   .row.start { justify-content: flex-start; gap: 6px; }
   .hint { margin: -2px 0 0; font: 11px/1.45 var(--mono); color: var(--ink-3); }
-  .key { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
-  .key i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
-  .key i.bar { width: 4px; height: 13px; border-radius: 1px; margin: 0 10px 0 3px; vertical-align: -2px; }
-  .key i.blk { width: 7px; height: 13px; border-radius: 1px; margin-right: 2px; vertical-align: -2px; background: #8fa3bf; box-shadow: 9px 8px 0 -4px #4a5566; margin-right: 11px; }
-  .key i.band { width: 14px; height: 9px; border-radius: 2px; background: color-mix(in srgb, #f27d8a 30%, transparent); }
+  .legend-list { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
+  .legend-list i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
+  .legend-list i.bar { width: 4px; height: 13px; border-radius: 1px; margin: 0 10px 0 3px; vertical-align: -2px; }
+  .legend-list i.blk { width: 7px; height: 13px; border-radius: 1px; margin-right: 2px; vertical-align: -2px; background: #8fa3bf; box-shadow: 9px 8px 0 -4px #4a5566; margin-right: 11px; }
+  .legend-list i.band { width: 14px; height: 9px; border-radius: 2px; background: color-mix(in srgb, #f27d8a 30%, transparent); }
   .stage { position: relative; min-height: 0; overflow: hidden; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--plot); }
   .stage :global(.cdr-canvas) { position: absolute; inset: 0; display: block; touch-action: none; }
   .stage :global(.cdr-labels) { position: absolute; inset: 0; pointer-events: none; }
   .stage :global(.cdr-lbl) { position: relative; top: -14px; padding: 3px 7px; border-radius: 5px; background: color-mix(in srgb, var(--plot) 88%, transparent); box-shadow: 0 0 0 1px var(--rule); color: var(--ink); font: 500 11.5px/1.2 var(--sans); white-space: nowrap; transition: opacity 0.3s; }
   .stage :global(.cdr-lbl.tick) { top: 0; padding: 1px 5px; font: 500 11px var(--mono); color: var(--ink-2); }
   .stage :global(.cdr-lbl.reader) { color: var(--brand); box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 55%, transparent); }
-  .stage :global(.far .cdr-lbl) { opacity: 0; }
   .stage :global(.cdr-bit) { font: 600 15px/1 var(--mono); color: var(--brand); text-shadow: 0 0 3px var(--plot), 0 0 6px var(--plot); }
   .stage :global(.cdr-bit.bad) { color: var(--bad); }
   .nogl { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 20px; color: var(--ink-2); text-align: center; }

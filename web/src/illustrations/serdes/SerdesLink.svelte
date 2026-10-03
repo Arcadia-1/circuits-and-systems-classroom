@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { isLightTheme } from '../../lib/theme';
   import Range from '../../components/ui/Range.svelte';
   import Segmented from '../../components/ui/Segmented.svelte';
   import { nf } from '../../lib/format';
@@ -20,7 +21,7 @@
   let ctle = $state<'auto' | 'manual'>('auto'), gdc = $state(-9), gdc2 = $state(-3);
   let playing = $state(true), speed = $state(1), labels = $state(true), spin = $state(true);
   let view = $state<ViewName | null>('overview');
-  let light = $state(false), noGl = $state(false);
+  let light = $state(true), noGl = $state(false);
   let hover = $state<{ id: BlockId; x: number; y: number } | null>(null);
   let picked = $state<BlockId | null>(null);
   let host: HTMLDivElement | undefined = $state();
@@ -61,10 +62,9 @@
       playing = false;
       spin = false;
     }
-    const isLight = () => document.documentElement.classList.contains('light');
-    light = isLight();
+    light = isLightTheme();
     const themeWatch = new MutationObserver(() => {
-      light = isLight();
+      light = isLightTheme();
       scene?.setTheme(light);
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -152,7 +152,7 @@
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') picked = null; }} />
 
-<main class="page serdes">
+<main class="page scene-lesson serdes">
   <section class="work">
     <aside class="side" aria-label="Link settings">
       <section>
@@ -188,7 +188,7 @@
       </section>
       <section>
         <h2 class="label">Key</h2>
-        <ul class="key" aria-label="Symbol colours">
+        <ul class="legend-list" aria-label="Symbol colours">
           {#each SYMBOL_COLORS as c, i (c)}<li><i style:background={c}></i>{LEVEL_NAMES[i]}</li>{/each}
           <li><i style:background={ERROR_COLOR}></i>error</li>
         </ul>
@@ -243,10 +243,10 @@
   .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-2); }
   .row.start { justify-content: flex-start; }
   .hint { margin: -3px 0 0; font: 11px/1.4 var(--mono); color: var(--ink-3); }
-  .key, .floor { display: grid; gap: 5px 10px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
-  .key { grid-template-columns: repeat(5, max-content); font-family: var(--mono); font-size: 11.5px; }
+  .legend-list, .floor { display: grid; gap: 5px 10px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
+  .legend-list { grid-template-columns: repeat(5, max-content); font-family: var(--mono); font-size: 11.5px; }
   .floor { grid-template-columns: 1fr 1fr; }
-  .key i, .floor i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .legend-list i, .floor i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   .stage { position: relative; min-height: 0; overflow: hidden; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--plot); }
   .stage :global(.serdes-canvas) { position: absolute; inset: 0; display: block; touch-action: none; }
   .stage :global(.serdes-labels) { position: absolute; inset: 0; pointer-events: none; }

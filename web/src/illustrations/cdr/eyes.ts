@@ -1,7 +1,7 @@
 /**
  * NRZ eye diagrams folded two ways from the same edges: by the recovered clock (what the CDR's data sampler sees) and by
  * the free-running local clock (what a receiver without a CDR would see). The transitions are raised-cosine steps as
- * wide as the eye closure, so the drawn eye closes exactly where the model counts a bit error.
+ * wide as the eye closure, so the drawn eye closes where the model counts a timing-margin violation.
  */
 import { EyeImage } from '../serdes/streams';
 import { EYE_CLOSURE, wrap, type UiSample } from './model';

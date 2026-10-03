@@ -25,31 +25,28 @@ const { pageTitle } = Astro.props;
 </header>
 
 <script>
-  const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
-  const media = window.matchMedia('(prefers-color-scheme: light)');
-  const storageKey = 'circuits-systems-theme';
-  let preference: string | null = null;
-  try { preference = localStorage.getItem(storageKey); } catch { /* System preference works without storage. */ }
-  function apply(light: boolean) {
-    document.documentElement.classList.toggle('light', light);
-    document.documentElement.classList.toggle('dark', !light && preference === 'dark');
+  import { isLightTheme, THEME_KEY } from '../lib/theme';
+
+  function updateButton() {
+    const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
+    const light = isLightTheme();
     if (button) {
       button.setAttribute('aria-label', `Switch to ${light ? 'dark' : 'light'} mode`);
       button.title = `Switch to ${light ? 'dark' : 'light'} mode`;
+      button.hidden = false;
     }
   }
-  if (button) {
-    apply(preference === 'light' || (preference !== 'dark' && media.matches));
-    button.hidden = false;
-    button.addEventListener('click', () => {
-      preference = document.documentElement.classList.contains('light') ? 'dark' : 'light';
-      apply(preference === 'light');
-      try { localStorage.setItem(storageKey, preference); } catch { /* The toggle still works for this visit. */ }
-    });
-  }
-  media.addEventListener('change', (event) => {
-    if (preference !== 'light' && preference !== 'dark') apply(event.matches);
+  // The header is replaced on every Astro navigation; delegate to the current button.
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest('.theme-toggle')) return;
+    const light = !isLightTheme();
+    document.documentElement.classList.toggle('light', light);
+    document.documentElement.classList.toggle('dark', !light);
+    try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch {}
+    updateButton();
   });
+  document.addEventListener('astro:page-load', updateButton);
+  updateButton();
 </script>
 
 <style>

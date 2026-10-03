@@ -1,0 +1,18 @@
+<!-- Apply the saved choice before first paint, including on a direct visit. -->
+<script is:inline>
+  (() => {
+    let dark = false;
+    try { dark = localStorage.getItem('circuits-systems-theme') === 'dark'; } catch {}
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.classList.toggle('light', !dark);
+  })();
+</script>
+
+<script>
+  import { applyTheme } from '../lib/theme';
+
+  // Astro replaces the root's attributes during navigation. Set the incoming
+  // document's theme before that swap, so islands and canvases see it immediately.
+  document.addEventListener('astro:before-swap', (event) => applyTheme(event.newDocument.documentElement));
+  document.addEventListener('astro:after-swap', () => applyTheme());
+</script>

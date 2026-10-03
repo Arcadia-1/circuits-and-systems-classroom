@@ -1,6 +1,7 @@
 ---
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
+import Theme from '../components/Theme.astro';
 import { isLessonPath, isPublicLessonPath } from '../data/publication';
 import { ClientRouter } from 'astro:transitions';
 import '../styles/global.css';
@@ -36,18 +37,7 @@ const siteName = 'Circuits & Systems Classroom';
     <meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0a0d13" media="(prefers-color-scheme: dark)" />
     <ClientRouter />
-    <script is:inline>
-      let theme;
-      try {
-        theme = localStorage.getItem('circuits-systems-theme');
-        // The former generic key could leave the renamed site permanently dark.
-        localStorage.removeItem('theme');
-      } catch {}
-      document.documentElement.classList.toggle('dark', theme === 'dark');
-      if (theme === 'light' || (theme !== 'dark' && matchMedia('(prefers-color-scheme: light)').matches)) {
-        document.documentElement.classList.add('light');
-      }
-    </script>
+    <Theme />
   </head>
   <body transition:animate="none">
     <a class="skip-link" href="#main-content">Skip to content</a>
