@@ -285,6 +285,8 @@ export interface LinkAnalysis {
   padTs: number;
   padH0: number;
   padRange: number;
+  /** Cursor SNR at the RX pad, before receiver equalization, at the pad eye's sampling phase. */
+  padSnr: number;
   /** Noise per fine sample at the pad (V) and at the ADC (FS), and per symbol decision (FS). */
   sigPad: number;
   sigAdc: number;
@@ -367,9 +369,11 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
     pad: padSlice,
     padTs,
     padH0,
+    padSnr: EA * padH0 ** 2 / (EA * Math.max(0, pr2 - padH0 ** 2) + STX2 * pr2 + sigPad ** 2),
     padRange: Math.max(1.12 * Math.abs(dc), 3.4 * Math.sqrt(EA * pr2), 1.3 * padH0) + 3 * sigPad,
     sigPad,
-    sigAdc: Math.sqrt(th2 + xt2 + adc2),
+    // The eye stream and analytical budget use the same small-jitter equivalent noise variance.
+    sigAdc: Math.sqrt(th2 + xt2 + adc2 + j2),
     sigSample: Math.sqrt(th2 + xt2 + adc2 + j2 + STX2 * hh),
     weights: best.w,
     snr: best.snr,

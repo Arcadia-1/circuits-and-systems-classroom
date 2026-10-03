@@ -16,6 +16,8 @@
     { value: 'overview', label: 'Overview' }, { value: 'tx', label: 'TX chip' }, { value: 'channel', label: 'Channel' }, { value: 'rx', label: 'RX chip' }, { value: 'adc', label: 'TI-ADC' },
   ];
   const LEVEL_NAMES = ['−3', '−1', '+1', '+3'];
+  const EXAMPLE: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -9, gdc2: -3, dsp: true };
+  const settingsKey = (s: LinkSettings) => JSON.stringify([s.lossDb, s.xtV, s.rxNoiseV, s.txFfe, s.dsp, s.autoCtle, s.autoCtle ? 0 : s.gdc, s.autoCtle ? 0 : s.gdc2]);
 
   let lossDb = $state(28), xtMv = $state(1.5), rxnMv = $state(0.8), txFfe = $state(true), dsp = $state(true);
   let ctle = $state<'auto' | 'manual'>('auto'), gdc = $state(-9), gdc2 = $state(-3);
@@ -27,9 +29,11 @@
   let host: HTMLDivElement | undefined = $state();
   let scope: ReturnType<typeof Scope> | undefined = $state();
 
-  const first = analyzeLink({ lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -9, gdc2: -3, dsp: true });
+  const first = analyzeLink(EXAMPLE);
+  let appliedSettings = settingsKey(EXAMPLE);
   let a = $state.raw<LinkAnalysis>(first);
   const rx = new Receiver(first, true), stream = new SymbolStream(), eyes = new EyeStream();
+  let measured = $state.raw(eyes.measurements());
   let live = $state.raw<Metrics>(rx.live);
   let adapting = $state(false), decisions = $state(0), errors = $state(0);
   let line = lineResponses(28, true), lineKey = '28|true';
@@ -40,6 +44,9 @@
     const auto = ctle === 'auto';
     const s: LinkSettings = { lossDb, xtV: xtMv * 1e-3, rxNoiseV: rxnMv * 1e-3, txFfe, dsp, autoCtle: auto, gdc: auto ? 0 : gdc, gdc2: auto ? 0 : gdc2 };
     const timer = setTimeout(() => {
+      const next = settingsKey(s);
+      if (next === appliedSettings) return;
+      appliedSettings = next;
       a = analyzeLink(s);
       rx.retarget(a, s.dsp);
       if (auto) {
@@ -71,6 +78,8 @@
     let t = START, clockT = 0, frame = 0, raf = 0, last = performance.now(), gone = false;
     stream.start(t, rx);
     eyes.run(1500, rx);
+    measured = eyes.measurements();
+    let eyeModel = a, eyeWasMoving = false;
     import('./scene').then(({ SerdesScene }) => {
       if (gone || !host) return;
       try {
@@ -108,14 +117,18 @@
       const moving = rx.adapt(dt);
       stream.advance(t, rx, (n, v) => scene?.sampled(n, v, rx.tSample));
       scene?.update(dt, t, clockT, rx, stream, line, txFfe);
-      if (scope?.showsEyes()) {
+      if (playing || moving || eyeWasMoving || eyeModel !== a) {
         const k = Math.pow(0.955, dt * 60);
         for (const e of eyes.eyes) e.decay(k);
-        eyes.run(Math.max(8, Math.round(44 * dt * 60)), rx);
+        eyes.decisionEye.decay(k);
+        eyes.run(!playing && !moving ? 4200 : Math.max(8, Math.round(44 * dt * 60)), rx);
+        eyeModel = a;
       }
+      eyeWasMoving = moving;
       scope?.draw();
       if (frame % 8 === 0) {
         live = rx.live;
+        measured = eyes.measurements();
         adapting = moving;
         decisions = stream.decisions;
         errors = stream.errors;
@@ -135,12 +148,21 @@
     view = v;
     scene?.flyTo(v);
   };
+  const example = $derived(ctle === 'auto' && dsp ? lossDb === 28 && xtMv === 1.5 && rxnMv === 0.8 && txFfe ? 'normal' : lossDb === 42 && xtMv === 2.1 && rxnMv === 0.6 && !txFfe ? 'stress' : null : null);
+  function chooseExample(stress: boolean): void {
+    lossDb = stress ? 42 : 28;
+    xtMv = stress ? 2.1 : 1.5;
+    rxnMv = stress ? 0.6 : 0.8;
+    txFfe = !stress;
+    ctle = 'auto';
+    dsp = true;
+  }
   const slowMs = $derived(1000 / (UIPS * speed));
   const facts = $derived.by((): [string, string][] => {
     switch (picked) {
       case 'ctle': return [['g_DC / g_DC2', `${nf(a.gdc, 0)} / ${nf(a.gdc2, 0)} dB`], ['Boost, 28 GHz vs DC', `${nf(a.ctleBoostDb, 1)} dB`], ['Setting', ctle === 'auto' ? 'auto, best SNR' : 'manual']];
       case 'vga': return [['Gain', `${nf(20 * Math.log10(a.vga), 1)} dB`]];
-      case 'dsp': return [['SNR at slicer', `${nf(10 * Math.log10(live.snr), 1)} dB`], ['DFE b₁', dsp ? nf(live.b1, 3) : 'off']];
+      case 'dsp': return [['Model SNR at slicer', `${nf(10 * Math.log10(live.snr), 1)} dB`], ['DFE b₁', dsp ? nf(live.b1, 3) : 'off']];
       case 'cdr': return [['Sampling phase', `${nf(a.phaseUi, 2)} UI from the pulse peak`]];
       case 'chan': return [['Loss at 28 GHz', `${lossDb} dB bump to bump`], ['Velocity', '≈ 0.5 c, 2.7 mm per UI']];
       case 'txdsp': return [['Taps', txFfe ? '−0.10 / 0.75 / −0.15' : '0 / 1 / 0 (off)']];
@@ -156,6 +178,13 @@
   <section class="work">
     <aside class="side" aria-label="Link settings">
       <section>
+        <h2 class="label">Examples</h2>
+        <div class="row start" role="group" aria-label="Link examples">
+          <button type="button" aria-pressed={example === 'normal'} onclick={() => chooseExample(false)}>28 dB · normal</button>
+          <button type="button" aria-pressed={example === 'stress'} onclick={() => chooseExample(true)}>42 dB · stress</button>
+        </div>
+      </section>
+      <section>
         <h2 class="label">Channel</h2>
         <Range id="serdes-loss" bind:value={lossDb} min={8} max={44} step={1} output={`${lossDb} dB`}>Loss at 28 GHz</Range>
         <div class="ticks" aria-hidden="true"><span style:left="22.2%">VSR</span><span style:left="33.3%">MR</span><span style:left="55.6%">LR</span></div>
@@ -164,7 +193,7 @@
       <section>
         <h2 class="label">Transmitter</h2>
         <div class="row"><span>3-tap FFE</span><Segmented size="sm" label="Transmitter feed-forward equalizer" options={[{ value: false, label: 'Off' }, { value: true, label: 'On' }]} bind:value={txFfe} /></div>
-        <p class="hint">c(−1) −0.10 · c(0) 0.75 · c(+1) −0.15</p>
+        <p class="hint">{txFfe ? 'c(−1) −0.10 · c(0) 0.75 · c(+1) −0.15' : 'c(−1) 0 · c(0) 1 · c(+1) 0'}</p>
       </section>
       <section>
         <h2 class="label">Receiver</h2>
@@ -223,7 +252,7 @@
       {/if}
     </div>
 
-    <Scope bind:this={scope} {a} {live} {dsp} {adapting} {decisions} {errors} {light} {eyes} />
+    <Scope bind:this={scope} {a} {live} {dsp} {adapting} {decisions} {errors} {light} {eyes} {measured} />
   </section>
 </main>
 

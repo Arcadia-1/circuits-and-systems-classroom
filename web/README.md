@@ -60,9 +60,13 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   tree), with the line voltage drawn in slow motion from the channel model. The model evaluates a causal channel
   (skin effect, dielectric loss and one echo), the IEEE 802.3ck COM-form CTLE, VGA and noise terms in the frequency
   domain, searches the CTLE and sampling phase for the best SNR and solves a 12-tap MMSE FFE with a one-tap DFE; the eye
-  diagrams, error budget and Gaussian-approximation BER follow from it. The eyes show continuous RX-pad, ADC-input
-  and linear-FFE waveforms; DFE feedback is applied only to symbol samples, never spliced into a continuous eye.
-  A Plain PAM4 view overlays un-equalized TX-driver waveforms without a channel or added noise.
+  diagrams and model error budget follow from it. The default Compare view shows the same received data before RX
+  equalization and after CTLE + FFE + DFE. Its one-UI decision eye holds the preceding decision fixed within each
+  target-symbol window; phase zero is exactly the value sent to the slicer, without stitching different feedback states.
+  Measured SNR and observed Gray-coded BER use the last 4,096 symbols from this eye stream, including DFE error
+  propagation. The ideal-feedback SNR and Gaussian BER estimate remain in Channel for comparison. The Stages view
+  exposes the intermediate ADC and FFE waveforms. Normal (28 dB) and stress (42 dB) presets make the distinction
+  between effective equalization and a failing link explicit. A Plain PAM4 view remains available as a TX-only reference.
   `python/serdes_112g_link.py` is the NumPy
   reference. three.js loads only on this page, as a lazy chunk.
 - **Clock and data recovery** at `/serdes/clock-and-data-recovery/`. A bang-bang CDR for 56 GBd NRZ, opened by a

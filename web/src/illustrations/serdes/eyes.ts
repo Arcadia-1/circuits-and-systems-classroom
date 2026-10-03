@@ -23,6 +23,8 @@ export interface EyeStyle {
   /** PAM4 level amplitude for the dashed slicer thresholds, or null for none. */
   amplitude: number | null;
   corner: string;
+  /** Width of the displayed time window, in UI. */
+  spanUi?: number;
 }
 
 const offscreen = new WeakMap<HTMLCanvasElement, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; img: ImageData }>();
@@ -94,7 +96,7 @@ export function drawEye(canvas: HTMLCanvasElement, eye: EyeImage, style: EyeStyl
   g.textAlign = 'left';
   g.fillText(style.corner, 5 * dpr, 4 * dpr);
   g.textBaseline = 'bottom';
-  g.fillText('−1 UI', 5 * dpr, H - 3 * dpr);
+  g.fillText(`−${(style.spanUi ?? 2) / 2} UI`, 5 * dpr, H - 3 * dpr);
   g.textAlign = 'right';
-  g.fillText('+1 UI', W - 5 * dpr, H - 3 * dpr);
+  g.fillText(`+${(style.spanUi ?? 2) / 2} UI`, W - 5 * dpr, H - 3 * dpr);
 }
