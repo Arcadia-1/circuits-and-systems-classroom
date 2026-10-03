@@ -5,14 +5,17 @@
   import { PRE, berOf, type BudgetPart, type LinkAnalysis, type Metrics } from './model';
   import PulseChart from './PulseChart.svelte';
   import ResponseChart from './ResponseChart.svelte';
-  import type { EyeStream } from './streams';
+  import { plainPam4Eye, type EyeStream } from './streams';
 
   let { a, live, dsp, adapting, decisions, errors, light, eyes }: {
     a: LinkAnalysis; live: Metrics; dsp: boolean; adapting: boolean; decisions: number; errors: number; light: boolean; eyes: EyeStream;
   } = $props();
 
-  let tab = $state<'eyes' | 'channel'>('eyes');
+  let tab = $state<'eyes' | 'plain' | 'channel'>('eyes');
   let canvases: HTMLCanvasElement[] = $state([]);
+  let plainCanvas: HTMLCanvasElement | undefined = $state();
+  const plainEye = plainPam4Eye();
+  let plainPaint: { canvas: HTMLCanvasElement; width: number; height: number; light: boolean } | null = null;
 
   const PARTS: { key: BudgetPart; name: string; color: string }[] = [
     { key: 'isi', name: 'ISI', color: 'var(--ink-3)' },
@@ -33,6 +36,14 @@
   }
   /** Repaint the three eye diagrams from the stream's density images. */
   export function draw(): void {
+    if (tab === 'channel') return;
+    if (tab === 'plain') {
+      if (plainCanvas && (plainPaint?.canvas !== plainCanvas || plainPaint.width !== plainCanvas.width || plainPaint.height !== plainCanvas.height || plainPaint.light !== light)) {
+        drawEye(plainCanvas, plainEye, { light, range: 0.6, amplitude: null, corner: '±600 mV' });
+        plainPaint = { canvas: plainCanvas, width: plainCanvas.width, height: plainCanvas.height, light };
+      }
+      return;
+    }
     const styles = [
       { range: a.padRange, amplitude: null, corner: `±${Math.round(a.padRange * 1000)} mV` },
       { range: 1, amplitude: a.h[PRE], corner: '±1 FS · dashed: slicer' },
@@ -53,7 +64,7 @@
 
 <aside class="scope" aria-label="Receiver measurements">
   <div class="numbers">
-    <div class="metric"><span class="label">DSP SNR</span><span class="mono big">{nf(snrDb, 1)}</span><span class="unit">dB</span></div>
+    <div class="metric"><span class="label">{dsp ? 'Post-DFE SNR' : 'ADC SNR'}</span><span class="mono big">{nf(snrDb, 1)}</span><span class="unit">dB</span></div>
     <div class="metric"><span class="label">BER · estimate</span>
       {#if ber < 1e-15}<span class="mono big">&lt;10<sup>−15</sup></span>{:else}<span class="mono big">{(ber / 10 ** exponent).toFixed(1)}×10<sup>{nf(exponent, 0)}</sup></span>{/if}
     </div>
@@ -68,11 +79,16 @@
   <ul class="bkey">
     {#each PARTS as p (p.key)}<li><i style:background={p.color}></i>{p.name} <b class="mono">{Math.round((100 * live.parts[p.key]) / live.total)}%</b></li>{/each}
   </ul>
-  <Segmented size="sm" label="Scope view" options={[{ value: 'eyes', label: 'Eye diagrams' }, { value: 'channel', label: 'Channel' }]} bind:value={tab} />
+  <Segmented size="sm" label="Scope view" options={[{ value: 'eyes', label: 'Link eyes' }, { value: 'plain', label: 'Plain PAM4' }, { value: 'channel', label: 'Channel' }]} bind:value={tab} />
   {#if tab === 'eyes'}
     <figure class="eye"><figcaption><span class="label">RX pad</span>after the channel<span class="mono val">h₀ {Math.round(a.padH0 * 1000)} mV</span></figcaption><canvas bind:this={canvases[0]} use:sized></canvas></figure>
     <figure class="eye"><figcaption><span class="label">ADC input</span>after CTLE + VGA<span class="mono val">h₀ {a.h[PRE].toFixed(2)} FS</span></figcaption><canvas bind:this={canvases[1]} use:sized></canvas></figure>
-    <figure class="eye"><figcaption><span class="label">DSP output</span>{dsp ? 'FFE + DFE' : 'bypassed'}<span class="mono val">SNR {nf(snrDb, 1)} dB</span></figcaption><canvas bind:this={canvases[2]} use:sized></canvas></figure>
+    <figure class="eye"><figcaption><span class="label">{dsp ? 'FFE waveform' : 'ADC, normalized'}</span>{dsp ? 'before DFE' : 'DSP bypassed'}</figcaption><canvas bind:this={canvases[2]} use:sized></canvas></figure>
+    <p class="response-note">Continuous waveforms, overlaid in 2-UI windows.{dsp ? ' DFE acts only on symbol samples; its SNR is shown above.' : ''}</p>
+  {:else if tab === 'plain'}
+    <figure class="eye plain-eye"><figcaption><span class="label">PAM4 · TX reference</span><span class="mono val">56 GBd · 1 Vppd</span></figcaption><canvas bind:this={plainCanvas} use:sized aria-label="Plain PAM4 eye: 2 UI of the transmitter waveform, with four voltage levels and three eye openings"></canvas></figure>
+    <p class="response-note">2-UI cuts from one waveform, directly overlaid. Four levels: −500, −167, +167, +500 mV.</p>
+    <p class="response-note">TX driver only (two 50 GHz poles). No channel, equalizers or added noise. This reference is independent of the link settings.</p>
   {:else}
     <div class="chart">
       <div class="cap"><span class="label">Frequency response</span><span><i class="k0"></i>channel <i class="k2"></i>CTLE <i class="k1"></i>TX → ADC</span></div>
@@ -125,6 +141,7 @@
   figcaption { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--ink-3); }
   figcaption .val { margin-left: auto; font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
   canvas { display: block; width: 100%; height: 104px; border-radius: 6px; background: var(--plot); box-shadow: inset 0 0 0 1px var(--rule); }
+  .plain-eye canvas { height: 240px; }
   .chart { display: flex; flex-direction: column; gap: 2px; height: 170px; }
   .cap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; font-size: 12px; color: var(--ink-2); }
   .cap i { width: 10px; height: 2px; margin: 0 5px 3px 8px; vertical-align: middle; }

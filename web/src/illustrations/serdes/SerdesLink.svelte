@@ -112,8 +112,8 @@
         const k = Math.pow(0.955, dt * 60);
         for (const e of eyes.eyes) e.decay(k);
         eyes.run(Math.max(8, Math.round(44 * dt * 60)), rx);
-        scope.draw();
       }
+      scope?.draw();
       if (frame % 8 === 0) {
         live = rx.live;
         adapting = moving;

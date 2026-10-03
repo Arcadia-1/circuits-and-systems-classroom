@@ -3,7 +3,7 @@
  * decision per symbol) and a fast statistical stream that fills the three eye diagrams. No DOM here.
  */
 import { mulberry32 } from '../../lib/rng';
-import { LEVELS, NF, NFLY, NFPRE, OS, POST, PRE, PS, Prbs13, STX2, T0, metrics, waveAt, type LinkAnalysis, type Metrics } from './model';
+import { BAUD, LEVELS, NF, NFLY, NFPRE, OS, PLEN, POST, PRE, PS, Prbs13, STX2, T0, VPK, metrics, pulse, stage, waveAt, type LinkAnalysis, type Metrics } from './model';
 
 export const RING = 1024;
 export const MASK = RING - 1;
@@ -123,13 +123,16 @@ export class SymbolStream {
 export class EyeImage {
   static readonly W = 192;
   static readonly H = 112;
-  readonly buf = new Float32Array(EyeImage.W * EyeImage.H);
+  readonly buf: Float32Array;
+  constructor(readonly width = EyeImage.W, readonly height = EyeImage.H) {
+    this.buf = new Float32Array(width * height);
+  }
   decay(k: number): void {
     for (let i = 0; i < this.buf.length; i++) this.buf[i] *= k;
   }
   /** Draw one 2-UI trace (2·OS + 1 samples) into the image, vertical range ±range. */
   trace(win: Float32Array, range: number): void {
-    const W = EyeImage.W, H = EyeImage.H, sx = (W - 1) / (2 * OS), sy = (H - 1) / (2 * range);
+    const W = this.width, H = this.height, sx = (W - 1) / (2 * OS), sy = (H - 1) / (2 * range);
     let x0 = 0, y0 = (range - win[0]) * sy;
     for (let i = 1; i <= 2 * OS; i++) {
       const x1 = i * sx, y1 = (range - win[i]) * sy, dx = x1 - x0, dy = y1 - y0;
@@ -144,18 +147,38 @@ export class EyeImage {
   }
 }
 
-/** Fast stream for the eye diagrams: RX pad (V), ADC input (FS) and the equalized output (levels ±1, ±⅓). */
+/** Plain TX eye: consecutive 2-UI windows of PAM4 through the existing TX driver, without added noise or equalization. */
+export function plainPam4Eye(): EyeImage {
+  const image = new EyeImage(640, 400), levels = new Float32Array(RING), prbs = new Prbs13(0x1d3);
+  for (let n = 0; n < RING; n++) levels[n] = LEVELS[prbs.symbol()];
+  const response = pulse([stage.poles(50e9, 2)]);
+  const q = Float32Array.from(response.subarray(PS, PS + PLEN), (v) => v * VPK);
+  // Centre the eye on the symbol clock, delayed by the driver's DC group delay.
+  const centre = Math.round((T0 + 0.5 + BAUD / (Math.PI * 50e9)) * OS);
+  const window = new Float32Array(2 * OS + 1);
+  for (let n = 128; n < 640; n++) {
+    for (let i = 0; i <= 2 * OS; i++) window[i] = waveAt(q, n * OS + centre - OS + i, levels, MASK);
+    image.trace(window, 0.6);
+  }
+  return image;
+}
+
+/** Continuous eyes: RX pad (V), ADC input (FS), and linear FFE output before symbol-rate DFE feedback. */
 export class EyeStream {
   readonly eyes = [new EyeImage(), new EyeImage(), new EyeImage()] as const;
-  /** Equalized value at the sampling instant of the most recent symbols, for checks. */
+  /** Latest continuous FFE trace. DFE corrections are never applied between sampling instants. */
+  readonly ffeTrace = new Float32Array(2 * OS + 1);
+  /** DFE-corrected samples and the corresponding slicer decisions, once per symbol. */
   readonly centre = new Float32Array(RING);
+  readonly decision = new Uint8Array(RING);
   n = 64;
   private generated = 0;
+  private analysis: LinkAnalysis | null = null;
+  private warmup = 0;
   private readonly sym = new Uint8Array(RING);
   private readonly value = new Float32Array(RING);
   private readonly pad: Float32Array[] = [];
   private readonly adc: Float32Array[] = [];
-  private readonly out = new Float32Array(2 * OS + 1);
   private readonly prbs: Prbs13;
   private readonly gauss: () => number;
   constructor(seed = 0x0b5) {
@@ -168,32 +191,46 @@ export class EyeStream {
   }
   run(count: number, rx: Receiver): void {
     const a = rx.a, taps = rx.taps, f0 = rx.live.f0 || 1, b1 = rx.live.b1, stx = Math.sqrt(STX2);
-    while (this.generated <= this.n + count + 34) {
-      const s = this.prbs.symbol();
-      this.sym[this.generated & MASK] = s;
-      this.value[this.generated & MASK] = LEVELS[s] + this.gauss() * stx;
-      this.generated++;
+    if (this.analysis !== a) {
+      this.analysis = a;
+      this.warmup = 0;
+      for (const eye of this.eyes) eye.buf.fill(0);
     }
     for (let c = 0; c < count; c++) {
       const n = this.n++, wp = this.pad[n & 15], wa = this.adc[n & 15];
+      // Generate just enough look-ahead; a large initial fill must not overwrite the symbol ring.
+      while (this.generated <= n + 34) {
+        const s = this.prbs.symbol();
+        this.sym[this.generated & MASK] = s;
+        this.value[this.generated & MASK] = LEVELS[s] + this.gauss() * stx;
+        this.generated++;
+      }
       const mp = n * OS + PS + a.padTs - OS, ma = n * OS + PS + a.tsOff - OS;
-      for (let i = 0; i <= 2 * OS; i++) {
+      // Adjacent windows share one UI, including its noise: they are cuts from one waveform.
+      const first = this.warmup ? OS + 1 : 0;
+      if (this.warmup) {
+        wp.set(this.pad[(n - 1) & 15].subarray(OS));
+        wa.set(this.adc[(n - 1) & 15].subarray(OS));
+      }
+      for (let i = first; i <= 2 * OS; i++) {
         wp[i] = waveAt(a.pad, mp + i, this.value, MASK) + this.gauss() * a.sigPad;
         wa[i] = Math.max(-1, Math.min(1, waveAt(a.adc, ma + i, this.value, MASK) + this.gauss() * a.sigAdc));
       }
       this.eyes[0].trace(wp, a.padRange);
       this.eyes[1].trace(wa, 1);
-      if (n < 90) continue;
-      // The T-spaced FFE applied at every phase, with the DFE feedback switched once per UI.
+      if (++this.warmup < NF) continue;
+      // Apply the linear FFE at every phase, without inventing a held DFE waveform.
       const nd = n - NFPRE;
       for (let i = 0; i <= 2 * OS; i++) {
         let z = 0;
         for (let t = 0; t < NF; t++) z += taps[t] * this.adc[(nd - t + NFPRE) & 15][i];
-        const ks = nd + (i < OS / 2 ? -1 : i >= 1.5 * OS ? 1 : 0);
-        this.out[i] = z / f0 - b1 * LEVELS[this.sym[(ks - 1) & MASK]];
+        this.ffeTrace[i] = z / f0;
       }
-      this.centre[nd & MASK] = this.out[OS];
-      this.eyes[2].trace(this.out, 1.6);
+      // A DFE is a decision-time operation. Feed back the previous decision, not the known transmitted symbol.
+      const sample = this.ffeTrace[OS] - b1 * LEVELS[this.decision[(nd - 1) & MASK]];
+      this.centre[nd & MASK] = sample;
+      this.decision[nd & MASK] = sample < -2 / 3 ? 0 : sample < 0 ? 1 : sample < 2 / 3 ? 2 : 3;
+      this.eyes[2].trace(this.ffeTrace, 1.6);
     }
   }
   symbolAt(n: number): number {

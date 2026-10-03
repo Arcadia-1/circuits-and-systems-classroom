@@ -60,7 +60,10 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   tree), with the line voltage drawn in slow motion from the channel model. The model evaluates a causal channel
   (skin effect, dielectric loss and one echo), the IEEE 802.3ck COM-form CTLE, VGA and noise terms in the frequency
   domain, searches the CTLE and sampling phase for the best SNR and solves a 12-tap MMSE FFE with a one-tap DFE; the eye
-  diagrams, error budget and Gaussian-approximation BER follow from it. `python/serdes_112g_link.py` is the NumPy
+  diagrams, error budget and Gaussian-approximation BER follow from it. The eyes show continuous RX-pad, ADC-input
+  and linear-FFE waveforms; DFE feedback is applied only to symbol samples, never spliced into a continuous eye.
+  A Plain PAM4 view overlays un-equalized TX-driver waveforms without a channel or added noise.
+  `python/serdes_112g_link.py` is the NumPy
   reference. three.js loads only on this page, as a lazy chunk.
 - **Clock and data recovery** at `/serdes/clock-and-data-recovery/`. A bang-bang CDR for 56 GBd NRZ, opened by a
   six-step guided tour for beginners on a slow-motion conveyor belt: bits ride past a reader and an edge checker, and each

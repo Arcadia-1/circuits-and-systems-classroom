@@ -1,5 +1,5 @@
 /** Draws an EyeImage density onto a canvas: grid, persistence-style colour map, slicer levels and axis labels. */
-import { EyeImage } from './streams';
+import type { EyeImage } from './streams';
 
 type Rgba = [number, number, number, number];
 function ramp(stops: [number, Rgba][]): Uint8ClampedArray {
@@ -32,13 +32,13 @@ export function drawEye(canvas: HTMLCanvasElement, eye: EyeImage, style: EyeStyl
   const g = canvas.getContext('2d');
   if (!W || !H || !css || !g) return;
   let off = offscreen.get(canvas);
-  if (!off) {
+  if (!off || off.canvas.width !== eye.width || off.canvas.height !== eye.height) {
     const c = document.createElement('canvas');
-    c.width = EyeImage.W;
-    c.height = EyeImage.H;
+    c.width = eye.width;
+    c.height = eye.height;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    off = { canvas: c, ctx, img: ctx.createImageData(EyeImage.W, EyeImage.H) };
+    off = { canvas: c, ctx, img: ctx.createImageData(eye.width, eye.height) };
     offscreen.set(canvas, off);
   }
   const lut = style.light ? LIGHT : DARK, buf = eye.buf, d = off.img.data;

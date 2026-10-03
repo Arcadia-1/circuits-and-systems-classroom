@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   FN, NF, NFPRE, OS, PRE, Prbs13, adcResponseDb, analyzeLink, berOf, lineResponses, metrics, pulse, responseDb, stage, type LinkSettings,
 } from '../src/illustrations/serdes/model';
-import { EyeStream, Receiver, SymbolStream } from '../src/illustrations/serdes/streams';
+import { EyeStream, Receiver, SymbolStream, plainPam4Eye } from '../src/illustrations/serdes/streams';
 
 const reference = readFileSync(new URL('../python/expected/serdes_112g_link.txt', import.meta.url), 'utf8').trim().split('\n');
 const rows = reference.slice(1).filter((line) => !line.startsWith('prbs13q')).map((line) => line.split(/\s+/).map(Number));
@@ -124,13 +124,54 @@ describe('receiver streams', () => {
     expect(s.errors / s.decisions).toBeGreaterThan(0.02);
   });
 
-  it('opens the equalized eye at the sampling instant', () => {
+  it('recovers the PAM4 levels with symbol-rate decision feedback', () => {
     const rx = new Receiver(analyzeLink(DEFAULT), true), eyes = new EyeStream(11);
     eyes.run(900, rx);
     for (let n = eyes.n - 700; n < eyes.n - 10; n++) {
       const level = [-1, -1 / 3, 1 / 3, 1][eyes.symbolAt(n)];
       expect(Math.abs(eyes.centre[n & 1023] - level)).toBeLessThan(0.3);
     }
+  });
+
+  it('keeps DFE feedback out of the continuous FFE eye', () => {
+    const a = analyzeLink(DEFAULT), withDfe = new Receiver(a, true), withoutDfe = new Receiver(a, true);
+    withoutDfe.live = { ...withoutDfe.live, b1: 0 };
+    const x = new EyeStream(11), y = new EyeStream(11);
+    x.run(120, withDfe);
+    y.run(120, withoutDfe);
+    expect(withDfe.live.b1).toBeGreaterThan(0.3);
+    expect(x.ffeTrace).toEqual(y.ffeTrace);
+    expect(x.eyes[2].buf).toEqual(y.eyes[2].buf);
+    const n = x.n - NFPRE - 1;
+    expect(x.centre[n & 1023]).not.toBeCloseTo(y.centre[n & 1023], 2);
+  });
+
+  it('reuses the same noisy waveform in overlapping eye windows', () => {
+    const rx = new Receiver(analyzeLink(DEFAULT), true), eyes = new EyeStream(11);
+    eyes.run(120, rx);
+    const previous = eyes.ffeTrace.slice(OS);
+    eyes.run(1, rx);
+    expect(eyes.ffeTrace.slice(0, OS + 1)).toEqual(previous);
+  });
+
+  it('produces the same eyes for a large initial fill and smaller playback batches', () => {
+    const rx = new Receiver(analyzeLink(DEFAULT), true), whole = new EyeStream(11), chunks = new EyeStream(11);
+    whole.run(1500, rx);
+    for (let n = 0; n < 15; n++) chunks.run(100, rx);
+    expect(whole.centre).toEqual(chunks.centre);
+    for (let i = 0; i < 3; i++) expect(whole.eyes[i].buf).toEqual(chunks.eyes[i].buf);
+  });
+
+  it('shows four levels and three open eyes in the plain TX reference', () => {
+    const eye = plainPam4Eye(), x = Math.floor(eye.width / 2);
+    const near = (v: number) => {
+      const row = Math.round((0.6 - v) / 1.2 * (eye.height - 1)), radius = Math.ceil(0.04 / 1.2 * eye.height);
+      let total = 0;
+      for (let dy = -radius; dy <= radius; dy++) total += eye.buf[(row + dy) * eye.width + x];
+      return total;
+    };
+    for (const level of [-0.5, -1 / 6, 1 / 6, 0.5]) expect(near(level)).toBeGreaterThan(1);
+    for (const threshold of [-1 / 3, 0, 1 / 3]) expect(near(threshold)).toBe(0);
   });
 
   it('adapts the taps from the unequalized state to the MMSE solution', () => {
