@@ -53,7 +53,8 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   the final row shows the last flash digit.
   DNL, INL and overall ADC transfer occupy three rows on the right, with ADC transfer filling the third row.
   All three overall plots retain their full input or code range. Inject gain error and residue nonlinearity into a selected
-  stage to connect the changed residue with its complete static error pattern. All sliders sit above the plots.
+  stage to connect the changed residue with its complete static error pattern. All sliders and action buttons share a clearly bounded control panel above the plots: reset/random error actions
+  sit beside the error sliders, and input/random-all actions sit beside the input slider.
   Both error controls span ±0.25% in 0.005% increments, with +0.10% default gain error. **Reset errors** clears both
   errors without moving the input. **Random input**, **Random errors**, and **Random all** independently randomize
   the input voltage, both selected-stage errors, or all three values; these actions pause the sweep and retain the

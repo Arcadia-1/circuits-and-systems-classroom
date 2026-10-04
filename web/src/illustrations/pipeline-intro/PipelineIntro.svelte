@@ -39,30 +39,32 @@
 </script>
 
 <main class="pipeline-lab">
-  <div class="lab-toolbar">
-    <div class="architecture"><label for="pipeline-architecture">Architecture</label><select id="pipeline-architecture" bind:value={topologyId} onchange={changeTopology}>{#each TOPOLOGIES as t}<option value={t.id}>{t.label}</option>{/each}</select></div>
-    <div class="injection"><label for="error-stage">Error in</label><select id="error-stage" bind:value={errorStage}>{#each topology.bits.slice(0,-1) as _,i}<option value={i}>Stage {i+1}</option>{/each}</select></div>
-    <div class="error-range"><Range id="gain-error" bind:value={gainError} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(gainError)}>Gain error</Range></div>
-    <div class="error-range"><Range id="nonlinearity" bind:value={nonlinearity} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(nonlinearity)}>Nonlinearity</Range></div>
-  </div>
-  <div class="control-deck">
-    <button class="play" aria-label={playing?'Pause input sweep':'Sweep input'} aria-pressed={playing} onclick={()=>playing=!playing}><span aria-hidden="true">{playing?'Ⅱ':'▷'}</span><span>{playing?'Pause':'Sweep'}</span></button>
-    <div class="input-control"><Range id="pipeline-input" bind:value={input} min={0} max={1} step={1/65536} output={`${input.toFixed(6)} V`} onstart={()=>playing=false}>Input voltage</Range></div>
-    <div class="output"><span>{conversion.totalBits}-BIT OUTPUT</span><b>{binary(conversion.code,conversion.totalBits)}</b><small>code {conversion.code}</small></div>
-  </div>
+  <section class="control-panel" aria-label="Pipeline controls">
+    <div class="lab-toolbar">
+      <div class="architecture"><label for="pipeline-architecture">Architecture</label><select id="pipeline-architecture" bind:value={topologyId} onchange={changeTopology}>{#each TOPOLOGIES as t}<option value={t.id}>{t.label}</option>{/each}</select></div>
+      <div class="injection"><label for="error-stage">Error in</label><select id="error-stage" bind:value={errorStage}>{#each topology.bits.slice(0,-1) as _,i}<option value={i}>Stage {i+1}</option>{/each}</select></div>
+      <div class="error-range"><Range id="gain-error" bind:value={gainError} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(gainError)}>Gain error</Range></div>
+      <div class="error-range"><Range id="nonlinearity" bind:value={nonlinearity} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(nonlinearity)}>Nonlinearity</Range></div>
+      <div class="error-actions" role="group" aria-label="Error actions">
+        <button title="Set both errors to zero; keep the input voltage" onclick={ideal}>Reset errors</button>
+        <button title="Randomize gain error and nonlinearity in the selected stage" onclick={()=>randomize('errors')}>Random errors</button>
+      </div>
+    </div>
+    <div class="control-deck">
+      <button class="play" aria-label={playing?'Pause input sweep':'Sweep input'} aria-pressed={playing} onclick={()=>playing=!playing}><span aria-hidden="true">{playing?'Ⅱ':'▷'}</span><span>{playing?'Pause':'Sweep'}</span></button>
+      <div class="input-control"><Range id="pipeline-input" bind:value={input} min={0} max={1} step={1/65536} output={`${input.toFixed(6)} V`} onstart={()=>playing=false}>Input voltage</Range></div>
+      <div class="input-actions" role="group" aria-label="Input and combined actions">
+        <button title="Randomize only the input voltage" onclick={()=>randomize('input')}>Random input</button>
+        <button class="random-all" title="Randomize the input voltage and both errors" onclick={()=>randomize('all')}>Random all</button>
+      </div>
+      <div class="output"><span>{conversion.totalBits}-BIT OUTPUT</span><b>{binary(conversion.code,conversion.totalBits)}</b><small>code {conversion.code}</small></div>
+      <button class="notes" aria-label="Model notes" title="Model notes" onclick={()=>notes?.showModal()}>ⓘ</button>
+    </div>
+  </section>
   <div class="context">
     <div class="legend"><span class="actual"></span> Actual <span class="reference"></span> Ideal <span class="architecture-note">· {conversion.totalBits}-bit, nonredundant</span></div>
     <div class="mobile-tabs" role="group" aria-label="Plot group"><button class:active={mobileView==='stages'} onclick={()=>mobileView='stages'} aria-pressed={mobileView==='stages'}>Stage curves</button><button class:active={mobileView==='overall'} onclick={()=>mobileView='overall'} aria-pressed={mobileView==='overall'}>DNL / INL</button></div>
     <span class="missing-codes">{analysis.missingCodes.length} missing codes</span>
-    <div class="utilities">
-      <button class="ideal" title="Set both errors to zero; keep the input voltage" onclick={ideal}>Reset errors</button>
-      <div class="random-actions" role="group" aria-label="Randomize parameters">
-        <button title="Randomize only the input voltage" onclick={()=>randomize('input')}>Random input</button>
-        <button title="Randomize gain error and nonlinearity in the selected stage" onclick={()=>randomize('errors')}>Random errors</button>
-        <button title="Randomize the input voltage and both errors" onclick={()=>randomize('all')}>Random all</button>
-      </div>
-      <button class="notes" aria-label="Model notes" title="Model notes" onclick={()=>notes?.showModal()}>ⓘ</button>
-    </div>
   </div>
   <section class="plots" aria-label="Every pipeline stage and overall linearity"><PipelinePlots bits={topology.bits} {settings} {analysis} {conversion} {domain} {mobileView}/></section>
 </main>
@@ -77,23 +79,67 @@
 </dialog>
 
 <style>
-  .pipeline-lab { height:100%; min-height:0; display:grid; grid-template-rows:auto auto auto minmax(0,1fr); gap:12px; padding:14px 24px 12px; background:#fff; }
-  .lab-toolbar { display:grid; grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr); align-items:center; gap:20px; }
-  .architecture,.injection { display:flex; align-items:center; gap:8px; }.architecture>label { display:none; }
-  label { font-size:11px; color:var(--ink-3); } select { background:#fff; color:var(--ink); font:500 12px var(--sans); border:1px solid var(--rule); border-radius:5px; padding:7px 24px 7px 9px; cursor:pointer; }
-  button { border:1px solid var(--rule); color:var(--ink-2); background:#fff; border-radius:5px; font:500 11px var(--sans); cursor:pointer; padding:7px 10px; }.notes { border:0; padding:0; font-size:20px; }
-  .error-range { min-width:0; }.error-range :global(.range) { display:grid; grid-template-columns:auto minmax(35px,1fr) 7.5ch; gap:9px; }.error-range :global(label) { font-size:10px; color:var(--ink-2); }.error-range :global(input) { width:100%; accent-color:#008b91; }.error-range :global(output) { font-size:11px; width:auto; text-align:right; }
-  .context { display:flex; align-items:center; gap:22px; color:var(--ink-3); font:10px/1.4 var(--sans); }.legend { display:flex; align-items:center; gap:6px; }.actual,.reference { display:inline-block; width:18px; border-top:2px solid #008b91; }.reference { border-top:2px dashed #9ba7b5; margin-left:8px; }.mobile-tabs { display:none; }.utilities { display:flex; align-items:center; gap:12px; }.utilities .ideal { padding:3px 7px; font-size:10px; }.missing-codes { margin-left:auto; font:10px var(--mono); }
+  .pipeline-lab { height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:12px; padding:12px 24px; background:#fff; }
+  .control-panel { display:grid; gap:10px; min-width:0; padding:10px 14px; border:1px solid #dbe4e8; border-radius:8px; background:#f5f8fa; }
+  .lab-toolbar { display:grid; grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr) auto; align-items:center; gap:16px; }
+  .architecture,.injection { display:flex; align-items:center; gap:8px; min-width:0; }.architecture>label { display:none; }
+  label { font-size:11px; color:var(--ink-3); }
+  select { max-width:100%; background:#fff; color:var(--ink); font:500 12px var(--sans); border:1px solid #c9d5dc; border-radius:5px; padding:7px 24px 7px 9px; cursor:pointer; }
+  button { border:1px solid #bdcdd5; color:#294b5a; background:#fff; border-radius:5px; font:500 12px var(--sans); white-space:nowrap; cursor:pointer; padding:8px 11px; }
+  button:hover { background:#e8f1f4; border-color:#819fac; }
+  .notes { border:0; padding:0 2px; font-size:21px; background:transparent; }
+  .error-actions,.input-actions { display:flex; gap:7px; }
+  .random-all,.play { background:#e8f4f4; color:#00696f; border-color:#b4d5d7; }
+  .error-range { min-width:0; }
+  .error-range :global(.range) { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:'label value' 'slider slider'; gap:4px; }
+  .error-range :global(label) { grid-area:label; font-size:10px; color:var(--ink-2); }
+  .error-range :global(input) { grid-area:slider; width:100%; accent-color:#008b91; }
+  .error-range :global(output) { grid-area:value; font-size:11px; width:7.5ch; text-align:right; }
+  .control-deck { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto; align-items:center; gap:16px; }
+  .play { display:flex; align-items:center; gap:7px; }.play>span:first-child { font:16px/1 var(--sans); }
+  .input-control { min-width:0; }
+  .input-control :global(.range) { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:12px; }
+  .input-control :global(input) { width:100%; accent-color:#008b91; }
+  .input-control :global(output) { width:10ch; text-align:right; font-size:12px; }
+  .output { display:grid; grid-template-columns:auto auto; gap:2px 8px; padding-left:16px; border-left:1px solid #dbe4e8; }
+  .output>span { grid-column:1/-1; font:8px var(--mono); color:var(--ink-3); letter-spacing:.08em; }
+  .output b { font:14px var(--mono); color:#ad6b09; }.output small { align-self:center; font:10px var(--mono); color:var(--ink-3); }
+  .context { display:flex; align-items:center; gap:16px; color:var(--ink-3); font:10px/1.4 var(--sans); }
+  .legend { display:flex; align-items:center; gap:6px; }.actual,.reference { display:inline-block; width:18px; border-top:2px solid #008b91; }
+  .reference { border-top:2px dashed #9ba7b5; margin-left:8px; }.mobile-tabs { display:none; }.missing-codes { margin-left:auto; font:10px var(--mono); }
   .plots { min-height:0; min-width:0; }
-  .utilities button:not(.notes) { padding:4px 8px; font-size:10px; white-space:nowrap; }
-  .random-actions { display:flex; gap:4px; }
-  .control-deck { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:22px; border-bottom:1px solid var(--rule); padding:0 0 12px; background:#fff; }
-  .play { display:flex; align-items:center; gap:8px; background:#eef7f7; color:#00696f; border-color:#cae3e4; padding:9px 12px; }.play > span:first-child { font:16px/1 var(--sans); }
-  .input-control { min-width:0; }.input-control :global(.range) { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:14px; }.input-control :global(input) { width:100%; accent-color:#008b91; }.input-control :global(output) { width:10ch; text-align:right; font-size:13px; }
-  .output { display:grid; grid-template-columns:auto auto; gap:1px 9px; padding-left:20px; border-left:1px solid var(--rule); }.output > span { grid-column:1/-1; font:8px var(--mono); color:var(--ink-3); letter-spacing:.08em; }.output b { font:15px var(--mono); color:#ad6b09; }.output small { align-self:center; font:10px var(--mono); color:var(--ink-3); }
   dialog { width:calc(100% - 32px); max-width:580px; max-height:85dvh; overflow:auto; border:1px solid var(--rule); border-radius:10px; padding:22px; background:#fff; color:var(--ink); } dialog::backdrop { background:#17243455; backdrop-filter:blur(3px); }.dialog-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }.dialog-head h2 { margin:0; font-size:17px; font-weight:550; }.dialog-head button { border:0; padding:0 4px; font-size:22px; } dialog p { font-size:12px; line-height:1.7; color:var(--ink-2); margin:14px 0 0; }
-  @media(max-width:1250px) { .lab-toolbar { gap:12px; }.error-range :global(.range) { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:'label value' 'slider slider'; gap:2px; }.error-range :global(label) { grid-area:label; }.error-range :global(input) { grid-area:slider; }.error-range :global(output) { grid-area:value; }.output small { display:none; } }
-  @media(max-width:850px) { .mobile-tabs { display:flex; gap:2px; }.mobile-tabs button { font-size:10px; padding:4px 7px; border-color:transparent; }.mobile-tabs .active { background:#e4f2f2; color:#00696f; }.architecture-note,.missing-codes { display:none; }.context { flex-wrap:wrap; gap:8px 10px; }.lab-toolbar { grid-template-columns:auto auto 1fr auto; gap:8px; }.architecture { grid-column:1/3; }.injection { grid-column:3/5; justify-self:end; }.error-range { grid-row:2; grid-column:span 2; }.utilities { width:100%; justify-content:flex-end; gap:9px; } }
-  @media(max-width:550px) { .pipeline-lab { padding:9px 10px; gap:8px; }.lab-toolbar { gap:8px 10px; }.architecture { grid-column:1/3; }.architecture select { max-width:210px; padding:6px; font-size:10px; }.injection { grid-column:3/5; justify-self:end; }.injection label { font-size:9px; }.injection select { font-size:10px; padding:6px; }.utilities button:not(.notes) { font-size:9px; padding:5px 6px; }.utilities { justify-content:space-between; gap:5px; }.notes { font-size:17px; }.error-range :global(label),.error-range :global(output) { font-size:9px; }.context { flex-wrap:wrap; gap:6px 12px; }.legend { font-size:9px; }.mobile-tabs { margin-left:auto; }.mobile-tabs button { font-size:9px; }.control-deck { gap:9px; padding-bottom:8px; }.play { padding:7px; }.play>span:last-child { display:none; }.input-control :global(.range) { grid-template-columns:1fr auto; grid-template-areas:'label value' 'slider slider'; gap:4px; }.input-control :global(label) { grid-area:label; font-size:8px; }.input-control :global(input) { grid-area:slider; }.input-control :global(output) { grid-area:value; font-size:10px; width:auto; }.output { padding-left:9px; }.output b { font-size:10px; }.output>span { font-size:7px; } }
-  @media(max-height:550px) { .pipeline-lab { padding:5px 10px; gap:5px; }.control-deck { padding-bottom:5px; }.play { padding:4px 8px; }.context { font-size:9px; } }
+  @media(max-width:1250px) {
+    .lab-toolbar,.control-deck { gap:12px; }.output small { display:none; }
+    .input-control :global(.range) { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:'label value' 'slider slider'; gap:3px; }
+    .input-control :global(label) { grid-area:label; font-size:10px; }.input-control :global(input) { grid-area:slider; }.input-control :global(output) { grid-area:value; }
+  }
+  @media(max-width:850px) {
+    .control-panel { padding:10px; gap:10px; }
+    .lab-toolbar { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px 12px; }
+    .injection { justify-self:end; }.error-actions { grid-column:1/-1; justify-content:flex-end; }
+    .control-deck { grid-template-columns:auto minmax(0,1fr) auto auto; gap:8px; border-top:1px solid #dbe4e8; padding-top:8px; }
+    .play { grid-column:1; grid-row:1; }.input-control { grid-column:2/-1; grid-row:1; }
+    .input-actions { grid-column:1/3; grid-row:2; }.output { grid-column:3; grid-row:2; }.notes { grid-column:4; grid-row:2; }
+    .mobile-tabs { display:flex; gap:2px; margin-left:auto; }.mobile-tabs button { font-size:10px; padding:4px 7px; border-color:transparent; }
+    .mobile-tabs .active { background:#e4f2f2; color:#00696f; }.architecture-note,.missing-codes { display:none; }.context { gap:10px; }
+  }
+  @media(max-width:550px) {
+    .pipeline-lab { padding:8px 10px; gap:8px; }.control-panel { padding:8px; gap:8px; }
+    select { font-size:10px; padding:6px; }.injection label { font-size:9px; }
+    button { font-size:11px; padding:7px 9px; }.notes { font-size:20px; padding:0; }
+    .error-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .error-range :global(label),.error-range :global(output) { font-size:9px; }
+    .input-control :global(output) { font-size:11px; }.play { padding:7px; }.play>span:last-child { display:none; }
+    .input-actions { gap:6px; }.output { padding-left:8px; }.output b { font-size:10px; }.output>span { font-size:7px; }
+    .legend { font-size:9px; }.mobile-tabs button { font-size:9px; }
+  }
+  @media(max-height:550px) {
+    .pipeline-lab { padding:5px 10px; gap:5px; }.control-panel { padding:6px 10px; gap:6px; }
+    button { padding:5px 9px; }.context { font-size:9px; }
+  }
+  @media(max-width:380px) {
+    .control-deck { grid-template-columns:auto minmax(0,1fr) auto; }
+    .notes { grid-column:3; }.output { grid-column:1/-1; grid-row:3; display:flex; justify-content:flex-end; align-items:center; padding:0; border:0; }
+  }
 </style>
