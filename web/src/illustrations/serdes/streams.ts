@@ -169,14 +169,82 @@ export interface EyeReadout {
   /** Signal-to-error power ratio using the transmitted PAM4 levels as the reference. */
   snr: number;
   padSnr: number;
+  /** Snapshot of the phase-swept receiver eye; its centre column is exactly histogram. */
+  samplingEye: EyeImage;
   histogram: { counts: Uint16Array; range: number };
 }
 
 const MEASURE = 4096;
 
+/**
+ * A statistical receiver eye: one amplitude histogram for each clock phase, over exactly MEASURE symbols.
+ * Two UI repeat the measured one-UI phase distribution. These columns are not connected as waveform traces.
+ */
+export class SamplingEye {
+  readonly image = new EyeImage(2 * OS + 1, 160);
+  range = 1.6;
+  count = 0;
+  private next = 0;
+  private readonly values = new Float32Array(MEASURE * OS);
+
+  reset(): void {
+    this.image.buf.fill(0);
+    this.range = 1.6;
+    this.count = this.next = 0;
+  }
+
+  private accumulate(offset: number, weight: number): void {
+    const { width, height, buf } = this.image;
+    for (let phase = 0; phase < OS; phase++) {
+      const bin = Math.min(height - 1, Math.max(0, Math.floor((this.values[offset + phase] / this.range + 1) * 0.5 * height)));
+      const row = (height - 1 - bin) * width;
+      buf[row + phase] += weight;
+      buf[row + phase + OS] += weight;
+      if (phase === 0) buf[row + 2 * OS] += weight;
+    }
+  }
+
+  add(phases: Float32Array): void {
+    let needed = this.range;
+    for (const value of phases) if (Math.abs(value) >= needed) needed = Math.ceil(Math.abs(value) * 1.05 * 5) / 5;
+    if (needed > this.range) {
+      // Re-bin all retained samples together so the eye and its centre-slice histogram always share an amplitude axis.
+      this.range = needed;
+      this.image.buf.fill(0);
+      for (let i = 0; i < this.count; i++) this.accumulate(i * OS, 1);
+    }
+    const offset = this.next * OS;
+    if (this.count === MEASURE) this.accumulate(offset, -1);
+    else this.count++;
+    this.values.set(phases, offset);
+    this.accumulate(offset, 1);
+    this.next = (this.next + 1) % MEASURE;
+  }
+
+  snapshot(): Pick<EyeReadout, 'samplingEye' | 'histogram'> {
+    // Drop startup/adaptation outliers from the scale once they leave the same rolling measurement window.
+    let needed = 1.6;
+    for (let i = 0; i < this.count * OS; i++) if (Math.abs(this.values[i]) >= needed) needed = Math.ceil(Math.abs(this.values[i]) * 1.05 * 5) / 5;
+    if (needed < this.range) {
+      this.range = needed;
+      this.image.buf.fill(0);
+      for (let i = 0; i < this.count; i++) this.accumulate(i * OS, 1);
+    }
+    const { width, height, buf } = this.image;
+    const samplingEye = new EyeImage(width, height), counts = new Uint16Array(height);
+    samplingEye.buf.set(buf);
+    for (let bin = 0; bin < height; bin++) counts[bin] = buf[(height - 1 - bin) * width + OS];
+    return { samplingEye, histogram: { counts, range: this.range } };
+  }
+}
+
 /** Continuous analog/linear eyes and discrete post-DFE measurements from the same received symbols. */
 export class EyeStream {
   readonly eyes = [new EyeImage(256, 160), new EyeImage(256, 160), new EyeImage(256, 160)] as const;
+  readonly samplingEye = new SamplingEye();
+  /** Slicer inputs for clock phases 0 … (OS−1)/OS UI. Phase zero is the actual receiver decision sample. */
+  readonly phaseSamples = new Float32Array(OS);
+  private readonly phaseDecisions = new Uint8Array(OS);
   /** Latest continuous FFE trace. DFE corrections are never applied between sampling instants. */
   readonly ffeTrace = new Float32Array(2 * OS + 1);
   /** DFE-corrected samples and the corresponding slicer decisions, once per symbol. */
@@ -194,7 +262,6 @@ export class EyeStream {
   private readonly residuals = new Float64Array(MEASURE);
   private readonly padResiduals = new Float64Array(MEASURE);
   private readonly wrongBits = new Uint8Array(MEASURE);
-  private readonly measuredValues = new Float32Array(MEASURE);
   private readonly sym = new Uint8Array(RING);
   private readonly value = new Float32Array(RING);
   private readonly pad: Float32Array[] = [];
@@ -215,6 +282,8 @@ export class EyeStream {
       this.analysis = a;
       this.warmup = 0;
       for (const eye of this.eyes) eye.buf.fill(0);
+      this.samplingEye.reset();
+      this.phaseDecisions.fill(0);
       this.measured = this.errorPower = this.padErrorPower = this.bitErrors = 0;
       this.residuals.fill(0);
       this.padResiduals.fill(0);
@@ -256,12 +325,22 @@ export class EyeStream {
       const sample = this.ffeTrace[OS] - feedback;
       this.centre[nd & MASK] = sample;
       this.decision[nd & MASK] = sample < -2 / 3 ? 0 : sample < 0 ? 1 : sample < 2 / 3 ? 2 : 3;
+      this.phaseSamples[0] = this.centre[nd & MASK];
+      this.phaseDecisions[0] = this.decision[nd & MASK];
+      // Sweep the clock with fixed equalizer taps. Each phase runs its own decision history, including errors.
+      // Using the nominal phase's previous decision at every phase would create the old non-periodic DFE fan.
+      for (let phase = 1; phase < OS; phase++) {
+        const z = this.ffeTrace[OS + phase] - b1 * LEVELS[this.phaseDecisions[phase]];
+        this.phaseSamples[phase] = z;
+        this.phaseDecisions[phase] = z < -2 / 3 ? 0 : z < 0 ? 1 : z < 2 / 3 ? 2 : 3;
+      }
       this.eyes[2].trace(this.ffeTrace, 1.6);
       // Let the previously uninitialized decision history settle before reporting steady-state measurements.
       if (this.warmup < NF + 32) continue;
+      this.samplingEye.add(this.phaseSamples);
       // A symbol-rate DFE defines only these decision samples. Do not extend its correction across an analog eye.
       const index = this.measured++ % MEASURE, symbol = this.sym[nd & MASK], decoded = this.decision[nd & MASK];
-      const residual = (sample - LEVELS[symbol]) ** 2;
+      const residual = (this.phaseSamples[0] - LEVELS[symbol]) ** 2;
       const padResidual = (this.padCentre[nd & MASK] / a.padH0 - LEVELS[symbol]) ** 2;
       const grayDiff = (symbol ^ (symbol >> 1)) ^ (decoded ^ (decoded >> 1));
       const wrong = (grayDiff & 1) + ((grayDiff >> 1) & 1);
@@ -271,16 +350,11 @@ export class EyeStream {
       this.residuals[index] = residual;
       this.padResiduals[index] = padResidual;
       this.wrongBits[index] = wrong;
-      this.measuredValues[index] = sample;
     }
   }
   measurements(): EyeReadout {
     const count = Math.min(MEASURE, this.measured);
-    let range = 1.3;
-    for (let i = 0; i < count; i++) range = Math.max(range, Math.abs(this.measuredValues[i]) * 1.05);
-    const counts = new Uint16Array(128);
-    for (let i = 0; i < count; i++) counts[Math.min(counts.length - 1, Math.max(0, Math.floor((this.measuredValues[i] / range + 1) * 0.5 * counts.length)))]++;
-    return { bits: 2 * count, bitErrors: this.bitErrors, snr: count ? EA * count / Math.max(1e-20, this.errorPower) : 0, padSnr: count ? EA * count / Math.max(1e-20, this.padErrorPower) : 0, histogram: { counts, range } };
+    return { bits: 2 * count, bitErrors: this.bitErrors, snr: count ? EA * count / Math.max(1e-20, this.errorPower) : 0, padSnr: count ? EA * count / Math.max(1e-20, this.padErrorPower) : 0, ...this.samplingEye.snapshot() };
   }
   symbolAt(n: number): number {
     return this.sym[n & MASK];

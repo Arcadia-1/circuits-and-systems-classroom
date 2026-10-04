@@ -127,7 +127,6 @@
         eyeModel = a;
       }
       eyeWasMoving = moving;
-      scope?.draw();
       if (frame % 8 === 0) {
         live = rx.live;
         measured = eyes.measurements();
@@ -135,6 +134,7 @@
         decisions = stream.decisions;
         errors = stream.errors;
       }
+      scope?.draw();
     };
     raf = requestAnimationFrame(loop);
     return () => {
