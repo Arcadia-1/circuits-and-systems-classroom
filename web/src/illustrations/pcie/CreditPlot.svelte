@@ -10,7 +10,7 @@
   const curve = $derived(Array.from({ length: most }, (_, i) => ({ c: i + 1, v: creditLimit({ ...p, credits: i + 1 }) })));
 </script>
 
-<Plot label="Share of the link used against the number of credits">
+<Plot label="Share of the link used against advertised packet slots">
   {#snippet children({ width: w, height: h })}
     {#if w > 0 && h > 60}
       {#each [0, 0.25, 0.5, 0.75, 1] as v (v)}

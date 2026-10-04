@@ -4,7 +4,7 @@
   import Range from '../../components/ui/Range.svelte';
   import Segmented from '../../components/ui/Segmented.svelte';
   import { nf } from '../../lib/format';
-  import { GENERATIONS, creditLimit, generation, linkGBps, payloadGBps, payloadShare, simulateLink, tlpNs, type LinkParams, type LinkRun } from './model';
+  import { FLIT, FLIT_TLP, GENERATIONS, isolatedTlpNs, creditLimit, generation, linkGBps, payloadGBps, payloadShare, simulateLink, tlpNs, type LinkParams, type LinkRun } from './model';
   import CreditPlot from './CreditPlot.svelte';
   import SharePlot from './SharePlot.svelte';
   import type { PcieScene } from './scene';
@@ -44,9 +44,9 @@
       link: BASE, view: 'board', speed: 40, action: 'lanes',
     },
     {
-      title: 'Every generation doubles the speed',
+      title: 'Generations, coding and PAM4',
       body: 'Generation 1 (2003) sent 2.5 billion bits per second on each lane; nearly every generation since has doubled it, up to 128 in Gen 7 (2025). The line code got leaner too: 8b/10b spent 20% of the bits on keeping the signal balanced, 128b/130b only 1.5%. Gen 6 moved to four voltage levels (PAM4) and to fixed 256-byte <em>flits</em> with error correction.',
-      look: 'Step through the generations: the packets shrink, and the bars on the right grow.',
+      look: 'Switch generations: Gen 1–5 show packet traffic; Gen 6–7 show the fixed FLIT format and its bandwidth.',
       link: BASE, view: 'board', speed: 40, action: 'gen',
     },
     {
@@ -63,7 +63,7 @@
     },
     {
       title: 'Credits: never overflow the receiver',
-      body: 'The device has room for only so many packets. It gives the CPU one <b class="y">credit</b> per free slot; the CPU spends one on every packet and waits when it has none left. A credit returns once the device has finished with a packet and the news has travelled back, so the link needs enough credits to cover that round trip.',
+      body: 'The device has room for only so many packets. It gives the CPU one <b class="y">packet slot</b> per free buffer position in this simplified model; the CPU spends one on every packet and waits when it has none left. A credit returns once the device has finished with a packet and the news has travelled back, so the link needs enough slots to cover that round trip. Real PCIe tracks separate header and data credits; each data credit covers 16 bytes.',
       look: 'Lower the credits to 2: gaps open between the packets and the data rate on the right drops to about half.',
       link: BASE, view: 'board', speed: 40, action: 'credits',
     },
@@ -115,6 +115,7 @@
   let scene: PcieScene | null = null;
 
   function simulate(): void {
+    if (flit) { sim.run = null; return; }
     sim.run = simulateLink(sim.p, sim.horizon, sim.corrupt);
     scene?.setLink(sim.run, sim.p, payload, header, flit);
   }
@@ -210,7 +211,7 @@
           simulate();
         }
       }
-      scene?.update(dt, sim.t);
+      if (!flit) scene?.update(dt, sim.t);
       if (frame % 6 === 0 && sim.run) {
         const run = sim.run, window = Math.min(sim.t, Math.max(1000, 20 * sim.p.tlpNs));
         let got = 0, sent = 0, resent = 0, naks = 0;
@@ -258,7 +259,7 @@
           {:else if step.action === 'zap'}
             <button type="button" class="primary" onclick={zap}>⚡ Zap a packet</button>
           {:else if step.action === 'credits'}
-            <Range id="pcie-tour-credits" bind:value={credits} min={1} max={16} step={1} output={`${credits}`}>Credits</Range>
+            <Range id="pcie-tour-credits" bind:value={credits} min={1} max={16} step={1} output={`${credits}`}>Packet slots</Range>
           {/if}
           <p class="look"><b>Look for</b>{step.look}</p>
           <div class="nav">
@@ -277,20 +278,21 @@
         <h2 class="label">Link</h2>
         <div class="row"><span>Generation</span><Segmented size="sm" mono label="PCIe generation" options={GEN_OPTIONS} bind:value={gen} /></div>
         <div class="row"><span>Lanes</span><Segmented size="sm" mono label="Link width" options={LANE_OPTIONS} bind:value={lanes} /></div>
-        <p class="hint">Gen {g.gen} ({g.year}) · {g.gts} GT/s per lane · {g.code === 'flit' ? 'PAM4, 256-byte flits with FEC' : g.code} · {gbps(linkRate)} GB/s each way</p>
+        <p class="hint">Gen {g.gen} ({g.year}) · {g.gts} GT/s per lane · {g.code === 'flit' ? 'PAM4, 256-byte flits with FEC' : g.code} · {gbps(lanes * g.gts / 8)} GB/s raw each way</p>
       </section>
       <section>
         <h2 class="label">Packets</h2>
         <Range id="pcie-payload" bind:value={payloadLog} min={4} max={12} step={1} output={`${payload.toLocaleString('en-US')} B`}>Payload</Range>
-        <div class="row"><span>Header</span><Segmented size="sm" label="Header size" options={[{ value: 12, label: '12 B (32-bit address)' }, { value: 16, label: '16 B' }]} bind:value={header} /></div>
-        <p class="hint">{nf(share * 100, 1)}% of the line rate is data · one packet takes {nf(params.tlpNs, params.tlpNs < 10 ? 2 : 1)} ns on this link</p>
+        <div class="row"><span>{flit ? 'Modeled TLP header' : 'Header'}</span><Segmented size="sm" label="Header size" options={[{ value: 12, label: '12 B (32-bit address)' }, { value: 16, label: '16 B' }]} bind:value={header} /></div>
+        <p class="hint">{nf(share * 100, 1)}% of the line rate is data · {flit ? 'packed-stream average' : 'serialization per packet'} {nf(params.tlpNs, params.tlpNs < 10 ? 2 : 1)} ns</p>
       </section>
+      {#if !flit}
       <section>
         <h2 class="label">Round trip</h2>
         <Range id="pcie-latency" bind:value={latency} min={20} max={400} step={10} output={`${latency} ns`}>Latency, one way</Range>
         <Range id="pcie-drain" bind:value={drain} min={0} max={200} step={2} output={`${drain} ns`}>Device time per packet</Range>
-        <Range id="pcie-credits" bind:value={credits} min={1} max={32} step={1} output={`${credits}`}>Credits</Range>
-        <p class="hint">A credit returns after {nf(params.tlpNs + 2 * latency + drain, 0)} ns: {Math.ceil((params.tlpNs + 2 * latency + drain) / params.tlpNs)} credits keep the link busy</p>
+        <Range id="pcie-credits" bind:value={credits} min={1} max={32} step={1} output={`${credits}`}>Packet slots</Range>
+        <p class="hint">A slot returns no sooner than {nf(params.tlpNs + 2 * latency + drain, 0)} ns. {#if drain > params.tlpNs}Device processing limits utilization to {nf(100 * params.tlpNs / drain, 0)}%, even with more slots.{:else}{Math.ceil((params.tlpNs + 2 * latency + drain) / params.tlpNs)} slots cover this round trip.{/if}</p>
       </section>
       <section>
         <h2 class="label">Playback</h2>
@@ -315,49 +317,77 @@
           <li><i style:background={DLLP_COLORS.ack}></i>ACK · <i class="inline" style:background={DLLP_COLORS.nak}></i>NAK · <i class="inline" style:background={DLLP_COLORS.credit}></i>credit, coming back</li>
         </ul>
       </section>
+      {/if}
     </aside>
 
-    <div class="stage" bind:this={host}>
+    <div class="stage" class:flit-mode={flit} bind:this={host}>
+      {#if flit}
+        <section class="flit-card" aria-label="FLIT format and serialization">
+          <span class="label">Gen {gen} · PAM4 · {g.gts / 2} GBd per lane</span>
+          <h2>One FLIT, 256 bytes</h2>
+          <p>TLPs share a fixed block. CRC, FEC and replay protect the FLIT.</p>
+          <div class="flit-block" aria-label="236 bytes TLP, 6 bytes data link, 8 bytes CRC, 6 bytes FEC">
+            {#each Array.from({ length: 256 }, (_, i) => i) as i}<i class:tlp={i < 236} class:dlp={i >= 236 && i < 242} class:crc={i >= 242 && i < 250} class:fec={i >= 250}></i>{/each}
+          </div>
+          <div class="flit-key"><span><i class="tlp"></i>236 B · TLPs</span><span><i class="dlp"></i>6 B · link</span><span><i class="crc"></i>8 B · CRC</span><span><i class="fec"></i>6 B · FEC</span></div>
+          <div class="flit-equation">256 × 8 ÷ ({lanes} × {g.gts}) = <b>{nf(FLIT * 8 / (lanes * g.gts), 2)} ns</b></div>
+          <p>One {header + payload}-byte modeled TLP starting in an empty FLIT needs <b>{Math.ceil((header + payload) / FLIT_TLP)} FLITs</b>: {nf(isolatedTlpNs(g, lanes, payload, header), 2)} ns, including final padding.</p>
+          <p class="hint">Continuous packing shares that padding with the next TLP. Payload rates are upper bounds with the chosen header size; optional headers, ordered sets and scheduling are excluded.</p>
+          <p class="hint">Select Gen 1–5 to explore LCRC, ACK/NAK and packet replay. Gen 6–7 use FLIT-level error correction and replay; that protocol is not animated here.</p>
+        </section>
+      {/if}
+      {#if !flit}
       {#if noGl}<p class="nogl">This view needs WebGL, which is turned off or unavailable in this browser.</p>{/if}
       <div class="views" role="group" aria-label="Camera views">
         {#each VIEWS as v (v.value)}<button type="button" aria-pressed={view === v.value} onclick={() => go(v.value)}>{v.label}</button>{/each}
       </div>
+      {/if}
     </div>
 
     <aside class="scope" aria-label="Link numbers">
       <div class="numbers">
-        <div class="metric"><span class="label">Link, each way</span><span class="mono big">{gbps(linkRate)}</span><span class="unit">GB/s</span></div>
-        <div class="metric"><span class="label">Data arriving now</span><span class="mono big">{gbps(readout.delivered)}</span><span class="unit">GB/s</span></div>
+        <div class="metric"><span class="label">{flit ? 'After CRC & FEC' : 'After line coding'}</span><span class="mono big">{gbps(linkRate)}</span><span class="unit">GB/s</span></div>
+        <div class="metric"><span class="label">{flit ? 'Payload ceiling' : 'Data arriving now'}</span><span class="mono big">{gbps(flit ? dataRate : readout.delivered)}</span><span class="unit">GB/s</span></div>
       </div>
-      <p class="hint">At most {gbps(dataRate)} GB/s of it is data ({nf(share * 100, 0)}%); the rest is envelopes. Fewer credits than the round trip needs cap it at {nf(creditShare * 100, 0)}%.</p>
-      <div class="line">
+      <p class="hint">Raw rate: {gbps(lanes * g.gts / 8)} GB/s each way. Payload ceiling: {gbps(dataRate)} GB/s ({nf(share * 100, 1)}% of raw). {flit ? 'The first number includes the 6-byte data-link field.' : `Buffer slots and device service limit utilization to ${nf(creditShare * 100, 0)}%.`}</p>
+      {#if !flit}<div class="line">
         <span class="counts mono">{readout.sent.toLocaleString('en-US')} sent · {readout.resent} resent · {readout.naks} NAK{readout.naks === 1 ? '' : 's'}</span>
-      </div>
+      </div>{/if}
       <div class="bars" role="group" aria-label="Bandwidth of each generation at this link width">
         <div class="cap"><span class="label">Each generation, x{lanes}</span><span>GB/s each way</span></div>
         {#each rates as r (r.gen)}
           <button type="button" class="bar-row" aria-pressed={r.gen === gen} onclick={() => (gen = r.gen)}>
             <span class="mono">Gen {r.gen}</span>
-            <span class="track"><span class="fill" style:width={`${8 + (92 * Math.log2(r.rate / rates[0].rate)) / Math.log2(rates[6].rate / rates[0].rate)}%`}></span></span>
+            <span class="track"><span class="fill" style:width={`${100 * r.rate / rates[6].rate}%`}></span></span>
             <span class="mono val">{gbps(r.rate)}</span>
           </button>
         {/each}
-        <p class="hint">Each bar is twice the one above it (except Gen 3, which also dropped 8b/10b). Click one to switch.</p>
+        <p class="hint">Linear scale, after line coding or CRC/FEC. Gen 2 → 3 rises from 5 to 8 GT/s; coding efficiency also improves. Click to switch.</p>
       </div>
       <div class="chart">
         <div class="cap"><span class="label">Share of the link that is data</span><span>payload size</span></div>
         <SharePlot {g} {header} {payload} />
       </div>
-      <div class="chart">
-        <div class="cap"><span class="label">Data rate against credits</span><span><i class="k1"></i>limit <i class="dot"></i>measured</span></div>
+      {#if !flit}<div class="chart">
+        <div class="cap"><span class="label">Data rate against packet slots</span><span><i class="k1"></i>limit <i class="dot"></i>measured</span></div>
         <CreditPlot p={params} measured={readout.measured} />
       </div>
-      <p class="hint">Each credit lets one more packet be under way. Once they cover the round trip ({nf(params.tlpNs + 2 * latency + drain, 0)} ns) the link never waits.</p>
+      <p class="hint">One slot per packet is a teaching abstraction. PCIe has separate posted, non-posted and completion header/data credit pools. ACKs can be cumulative; this model replies to every TLP and omits return-link serialization.</p>{/if}
     </aside>
   </section>
 </main>
 
 <style>
+  .flit-mode :global(.pcie-canvas), .flit-mode :global(.pcie-labels) { visibility: hidden; }
+  .flit-card { position: relative; z-index: 2; padding: clamp(18px, 3vw, 42px); height: 100%; overflow: auto; display: flex; flex-direction: column; justify-content: flex-start; gap: 18px; background: var(--plot); }
+  .flit-card h2 { font-size: 26px; margin: 0; }
+  .flit-card p { margin: 0; font-size: 14px; line-height: 1.6; }
+  .flit-block { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; }
+  .flit-block i { aspect-ratio: 1.8; border-radius: 2px; }
+  .tlp { background: var(--brand); } .dlp { background: var(--s1); } .crc { background: var(--s2); } .fec { background: #9971c7; }
+  .flit-key { display: flex; flex-wrap: wrap; gap: 10px 16px; font: 12px var(--mono); }
+  .flit-key i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; }
+  .flit-equation { font: 15px var(--mono); }
   .pcie { grid-template-rows: minmax(0, 1fr); }
   .work { display: grid; grid-template-columns: 290px minmax(0, 1fr) 320px; gap: 18px; min-height: 0; }
   .side, .scope { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
@@ -435,6 +465,8 @@
   .scope .hint { margin: -4px 0 2px; }
   @media (max-width: 1180px) { .work { grid-template-columns: 260px minmax(0, 1fr) 290px; gap: 14px; } }
   @media (max-width: 900px) {
+    .pcie.scene-lesson .work > .stage.flit-mode { height: auto; min-height: 0; }
+    .flit-mode .flit-card { height: auto; overflow: visible; }
     .work { grid-template-columns: minmax(0, 1fr); }
     .stage { order: -1; height: 62vh; min-height: 380px; }
     .side, .scope { overflow: visible; padding-right: 0; }

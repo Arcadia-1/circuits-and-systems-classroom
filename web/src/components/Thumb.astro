@@ -1,6 +1,6 @@
 ---
 /** Small schematic previews for the home page. */
-interface Props { kind: 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
+interface Props { kind: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
 const { kind } = Astro.props;
 const xs = Array.from({ length: 13 }, (_, i) => 6 + i * 14);
 const saw = [-14, -8, -2, 6, 14];
@@ -89,7 +89,24 @@ const cdrData = cdrBits.flatMap((b, i) => [`${4 + i * 14},${b ? 18 : 40}`, `${4 
 const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 14},${88}`, `${11 + i * 14},${66}`, `${18 + i * 14},${66}`]).join(' ');
 ---
 <svg class="thumb" viewBox="0 0 188 100" aria-hidden="true">
-  {kind === 'pcie' ? (
+  {kind === 'pll-intro' ? (
+    <g fill="none" stroke-width="2">
+      <path d="M10 35h18m30 0h20m32 0h20m30 0h18M147 51v35H42V51" stroke="var(--brand)"/>
+      <rect x="28" y="22" width="30" height="29" rx="4" stroke="var(--s1)"/><rect x="78" y="22" width="32" height="29" rx="4" stroke="var(--s2)"/><rect x="130" y="22" width="30" height="29" rx="4" stroke="var(--brand)"/>
+      <path d="M83 39h5v-8h8v8h9" stroke="var(--s2)"/><path d="M135 39l5-8 5 8 5-8 5 8" stroke="var(--brand)"/>
+      <path d="M39 29v14m8-14v14m-13-7h18" stroke="var(--s1)"/>
+    </g>
+  ) : kind === 'pipe-intro' ? (
+    <g fill="none" stroke-width="2">
+      {[0,1,2].map(i=><g><rect x={12+i*61} y="17" width="44" height="32" rx="4" stroke="var(--brand)"/><path d={`M${19+i*61} 40l9-16v16l9-16v16l9-16`} stroke="var(--s1)"/><path d={`M${14+i*61} 67h38M${14+i*61} 83h38`} stroke="var(--rule)"/><rect x={18+i*61} y={60+i*5} width="14" height="12" rx="2" fill="var(--s2)" stroke="none"/></g>)}
+      <path d="M57 33h14m47 0h14" stroke="var(--ink-3)"/>
+    </g>
+  ) : kind === 'calibration' ? (
+    <g fill="none" stroke-width="2">
+      <path d="M15 13v76h160" stroke="var(--rule)"/><path d="M20 85Q90 88 171 15" stroke="var(--s2)"/><path d="M20 85L171 15" stroke="var(--brand)"/>
+      <path d="M117 89v-23m8 23V77m15 12V56m8 33V80m15 9V74m8 15V85" stroke="var(--s1)"/>
+    </g>
+  ) : kind === 'pcie' ? (
     <>
       <rect class="win" x="6" y="24" width="30" height="52" rx="3" />
       <rect class="win" x="152" y="20" width="30" height="60" rx="3" />

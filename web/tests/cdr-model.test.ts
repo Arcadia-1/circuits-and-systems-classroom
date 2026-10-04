@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BitSource, CdrSim, DEFAULTS, JTOL_HZ, NPI, jtolAt, run, wrap, type CdrSettings } from '../src/illustrations/cdr/model';
+import { BitSource, CdrSim, DEFAULTS, EYE_CLOSURE, JTOL_HZ, NPI, jtolAt, run, wrap, type CdrSettings } from '../src/illustrations/cdr/model';
 
 const reference = readFileSync(new URL('../python/expected/serdes_cdr.txt', import.meta.url), 'utf8').trim().split('\n');
 const table = (header: string, stop: (line: string) => boolean) => {
@@ -21,6 +21,21 @@ const CASES: Record<string, Partial<CdrSettings>> = {
 };
 
 describe('bang-bang CDR model', () => {
+  it('counts each bit at most once when its two bounding edges violate the timing margin', () => {
+    const sim = new CdrSim({ ...DEFAULTS, kp: 8, decim: 1, latency: 8, sjUipp: .9, sjHz: 1e9 });
+    const violations = new Set<number>();
+    let previousTheta = 0;
+    for (let i = 0; i < 10000; i++) {
+      const s = sim.step();
+      if (s.transition) {
+        if (s.n > 0 && .5 + wrap(s.edge - previousTheta) < EYE_CLOSURE) violations.add(s.n - 1);
+        if (.5 - wrap(s.edge - s.theta) < EYE_CLOSURE) violations.add(s.n);
+      }
+      previousTheta = s.theta;
+    }
+    expect(violations.size).toBeGreaterThan(500);
+    expect(sim.errors).toBe(violations.size);
+  });
   it.each(table('case ', (l) => l.startsWith('jtol')).map((r) => [r[0], r] as const))('matches the Python reference for %s', (name, r) => {
     const out = run({ ...DEFAULTS, ...CASES[name] }, 40000);
     expect(out.slips).toBe(Number(r[1]));

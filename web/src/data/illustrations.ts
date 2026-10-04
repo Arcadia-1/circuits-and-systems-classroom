@@ -4,7 +4,7 @@ export interface Illustration {
   href: string;
   title: string;
   summary: string;
-  thumb: 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
+  thumb: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
   /** Whose site this is, for a page that is not on this one; it opens in a tab of its own. */
   external?: string;
   /** Public catalog label; assigned only after a lesson passes the editorial gate. */
@@ -59,6 +59,18 @@ export const topics: Topic[] = [
         title: 'Binary vs redundant SAR',
         summary: 'Explore SAR decisions, redundancy and weight calibration.',
         thumb: 'sar',
+      },
+      {
+        href: '/adc/pipeline-introduction/',
+        title: 'Pipeline ADC introduction',
+        summary: 'Resolve coarse bits, amplify the residue, and watch samples move through the pipeline.',
+        thumb: 'pipe-intro',
+      },
+      {
+        href: '/adc/nonlinear-calibration/',
+        title: 'Nonlinear calibration',
+        summary: 'Learn an inverse, test on new data, and see what clipping and limited training cannot recover.',
+        thumb: 'calibration',
       },
       {
         href: '/adc/pipeline-adc/',
@@ -140,6 +152,13 @@ export const topics: Topic[] = [
 export const related: Topic = {
   name: 'More to explore',
   items: [
+    {
+      href: '/pll/introduction/',
+      title: 'PLL introduction',
+      summary: 'Watch phase feedback lock an oscillator; explore loop speed, damping and the integral path.',
+      thumb: 'pll-intro',
+      category: 'PLL',
+    },
     {
       href: '/pll/integer-vs-fractional/',
       title: 'Integer-N vs fractional-N',

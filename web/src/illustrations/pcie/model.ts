@@ -58,10 +58,18 @@ export function payloadGBps(g: Generation, lanes: number, payload: number, heade
   return ((lanes * g.gts) / 8) * payloadShare(g, payload, header);
 }
 
-/** ns to send one TLP when the link carries nothing else. */
+/** Amortized ns per TLP in a continuous, densely packed stream; FLITs may contain multiple TLPs. */
 export function tlpNs(g: Generation, lanes: number, payload: number, header: number): number {
   const forPackets = g.code === 'flit' ? FLIT_TLP / FLIT : codeEfficiency(g.code);
   return (wireBytes(g, payload, header) * 8) / (lanes * g.gts * forPackets);
+}
+
+/** Serialization of a TLP starting in an empty FLIT, including padding of its last FLIT.
+ * Excludes scheduling, optional headers, SKP ordered sets and receiver latency. */
+export function isolatedTlpNs(g: Generation, lanes: number, payload: number, header: number): number {
+  return g.code === 'flit'
+    ? Math.ceil((payload + header) / FLIT_TLP) * FLIT * 8 / (lanes * g.gts)
+    : tlpNs(g, lanes, payload, header);
 }
 
 /** Byte k of a packet goes to lane k mod lanes, in the k div lanes-th byte time: dealt out like cards. */

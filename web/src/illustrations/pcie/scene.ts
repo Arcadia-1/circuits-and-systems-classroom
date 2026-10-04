@@ -202,7 +202,7 @@ export class PcieScene {
     this.buildAnatomy();
 
     this.label('CPU · root complex', new THREE.Vector3(CPU_X, 3.2, -1), 400);
-    this.label('Device · endpoint (SSD, GPU, NIC…)', new THREE.Vector3(DEV_X, 3.2, -1), 400);
+    this.label('Device · endpoint', new THREE.Vector3(DEV_X, 3.2, -1), 400);
     this.shelfLabel = this.label('', new THREE.Vector3(CPU_X, 2.6, 8.2), 120);
     this.coinLabel = this.label('', new THREE.Vector3(CPU_X, 2.6, -8.4), 120);
     this.slotLabel = this.label('', new THREE.Vector3(DEV_X, 2.6, 8.2), 120);
@@ -448,7 +448,7 @@ export class PcieScene {
     this.finish(this.slots, slotsShown);
     this.finish(this.fills, kf);
     this.setText(this.shelfLabel, `Replay buffer · ${held} kept until ACKed`);
-    this.setText(this.coinLabel, `Credits · ${credits} of ${p.credits} left`);
+    this.setText(this.coinLabel, `Packet slots · ${credits} of ${p.credits} left`);
     this.setText(this.slotLabel, `Receive buffer · ${inside} of ${p.credits} slots full`);
   }
 

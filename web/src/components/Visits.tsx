@@ -22,17 +22,16 @@ export default function Visits({ path, counter = false }: { path: string; counte
           setPublicStats(totals);
         }
       })
-      .catch(() => { /* Leave the counter hidden when totals are unavailable. */ });
+      .catch(() => { /* Keep the placeholder while totals are unavailable. */ });
     return () => controller.abort();
   }, [path, counter]);
 
   if (!counter) return null;
   const totals = stats ?? publicStats;
-  if (!totals || (totals.pv === 0 && totals.uv === 0)) return null;
 
   return (
     <a className="visitors" href="/analytics/" title="Open visitor analytics">
-      {format.format(totals.uv)} visitors · {format.format(totals.pv)} views
+      {totals ? format.format(totals.uv) : '—'} visitors · {totals ? format.format(totals.pv) : '—'} views
     </a>
   );
 }

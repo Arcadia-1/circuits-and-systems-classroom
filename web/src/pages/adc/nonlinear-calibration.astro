@@ -1,0 +1,9 @@
+---
+import Base from '../../layouts/Base.astro';
+import NonlinearCalibration from '../../illustrations/nonlinear-calibration/NonlinearCalibration.svelte';
+import '../../styles/illustration.css';
+import '../../styles/course.css';
+---
+<Base title="Nonlinear calibration" description="Learn a polynomial inverse from a known ramp, validate on an independent sine and see the limits from noise, extrapolation and clipping.">
+  <NonlinearCalibration client:load />
+</Base>

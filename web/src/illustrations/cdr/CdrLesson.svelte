@@ -208,8 +208,18 @@
       return;
     }
     jtol = null;
-    const timer = setTimeout(() => (jtol = JTOL_HZ.map((hz) => ({ hz, uipp: jtolAt(s, hz) }))), 250);
-    return () => clearTimeout(timer);
+    // Yield between frequencies so controls and animation remain responsive; cancel stale sweeps.
+    let cancelled = false, index = 0;
+    const curve: { hz: number; uipp: number }[] = [];
+    const next = () => {
+      if (cancelled) return;
+      const hz = JTOL_HZ[index++];
+      curve.push({ hz, uipp: jtolAt(s, hz) });
+      if (index < JTOL_HZ.length) timer = setTimeout(next, 0);
+      else jtol = curve;
+    };
+    let timer = setTimeout(next, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
   });
 
   onMount(() => {
@@ -348,7 +358,7 @@
         <Range id="cdr-sjf" bind:value={sjLog} min={6} max={9} step={0.05} output={freqText(sjHz)}>Jitter frequency</Range>
         <Range id="cdr-rj" bind:value={rjMui} min={0} max={50} step={1} output={`${rjMui} mUI`}>Random jitter</Range>
         <div class="row"><span>Pattern</span><Segmented size="sm" label="Data pattern" options={[{ value: 'prbs31', label: 'PRBS31' }, { value: 'prbs7', label: 'PRBS7' }, { value: 'cid', label: 'CID 72' }]} bind:value={pattern} /></div>
-        <p class="hint">56 GBd NRZ · 1 UI = one bit = {nf(1e12 / BAUD, 2)} ps · {freqText(Math.abs(ppm) * 1e-6 * BAUD)} off · real links stay within ±300 ppm (10,000 ppm = 1%)</p>
+        <p class="hint">56 GBd NRZ · 1 UI = one bit = {nf(1e12 / BAUD, 2)} ps · {freqText(Math.abs(ppm) * 1e-6 * BAUD)} off · +ppm means the local clock is fast; ±300 ppm is a typical example (10,000 ppm = 1%)</p>
       </section>
       <section>
         <h2 class="label">CDR loop</h2>
@@ -409,6 +419,7 @@
         <div class="metric"><span class="label">Learned clock error</span><span class="mono big">{cdr && integral ? int(readout.ppm) : '—'}</span><span class="unit">ppm</span></div>
       </div>
       <p class="hint">Wrapped timing error, including random jitter. 1,000 mUI = 1 bit. The integral path estimates the clock offset.</p>
+      <p class="hint">Model: ideal early/late decisions at known transitions, a 64-step phase interpolator, and a fixed 0.6 UI timing window. Analog slicer noise and Alexander three-sample logic are not simulated.</p>
       <div class="line">
         <span class="status" data-s={status.s}>{status.text}</span>
         <span class="counts mono">{int(readout.slips)} slips · {int(readout.errors)} margin violations / {int(readout.bits)} bits</span>
@@ -427,7 +438,7 @@
         <div class="cap"><span class="label">Jitter tolerance</span><span><i class="k1"></i>limit <i class="dot"></i>applied</span></div>
         <JtolPlot curve={jtol} {sjHz} {sjUipp} />
       </div>
-      <p class="hint">{cdr ? 'Finite simulation with no timing-margin violations; not a BER guarantee. Fast jitter must fit inside the 0.6 UI opening. The crossover changes with loop gain, update interval and latency.' : 'Enable the CDR loop to calculate its jitter tolerance.'}</p>
+      <p class="hint">{cdr ? 'Finite simulation with no timing-margin violations or cycle slips; not a BER guarantee. Fast jitter must fit inside the 0.6 UI opening. The crossover changes with loop gain, update interval and latency.' : 'Enable the CDR loop to calculate its jitter tolerance.'}</p>
     </aside>
   </section>
 </main>

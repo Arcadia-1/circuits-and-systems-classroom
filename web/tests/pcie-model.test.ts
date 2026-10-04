@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { GENERATIONS, creditLimit, generation, linkGBps, measuredShare, payloadShare, simulateLink, stripe, tlpNs, type LinkParams } from '../src/illustrations/pcie/model';
+import { GENERATIONS, isolatedTlpNs, creditLimit, generation, linkGBps, measuredShare, payloadShare, simulateLink, stripe, tlpNs, type LinkParams } from '../src/illustrations/pcie/model';
 
 const reference = readFileSync(new URL('../python/expected/serdes_pcie.txt', import.meta.url), 'utf8').trim().split('\n');
 const rows = (header: string) => {
@@ -15,6 +15,15 @@ const params = (gen: number, lanes: number, payload: number, header: number, lat
 const BASE = params(3, 4, 256, 16, 100, 40, 8);
 
 describe('PCIe numbers', () => {
+  it('separates densely packed throughput from whole-FLIT serialization', () => {
+    const g = generation(6);
+    expect(g.gts * 16 / 8).toBe(128);
+    expect(linkGBps(g, 16)).toBe(121);
+    expect(isolatedTlpNs(g, 16, 16, 16)).toBe(2);
+    expect(isolatedTlpNs(g, 16, 256, 16)).toBe(4);
+    expect(tlpNs(g, 16, 256, 16)).toBeLessThan(4);
+    expect(isolatedTlpNs(generation(3), 4, 256, 16)).toBe(tlpNs(generation(3), 4, 256, 16));
+  });
   it('matches the reference rates of every generation', () => {
     const table = rows('gen GT/s');
     expect(table).toHaveLength(GENERATIONS.length);

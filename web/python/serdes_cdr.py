@@ -1,6 +1,6 @@
 """Executable reference for the clock-and-data-recovery lesson.
 
-A bang-bang CDR for 56 GBd NRZ: Alexander early/late decisions on every transition, a digital loop filter that votes
+A bang-bang CDR for 56 GBd NRZ: ideal transition-based early/late decisions on every transition, a digital loop filter that votes
 over `decim` UI and applies proportional and integral corrections after `latency` updates, and a 64-step phase
 interpolator. The random jitter uses the same mulberry32 generator and Box-Muller transform as the browser, so
 src/illustrations/cdr/model.ts reproduces these numbers exactly; tests/cdr-model.test.ts compares them.
@@ -93,7 +93,7 @@ class Cdr:
         self.sj_arg = 0.0
 
     def flag(self, bit):
-        if bit != self.last_error_bit:
+        if bit >= 0 and bit > self.last_error_bit:
             self.last_error_bit = bit
             self.errors += 1
 
@@ -111,10 +111,10 @@ class Cdr:
         if transition:
             e = wrap(edge - theta)
             decision = 1 if e > 0 else -1 if e < 0 else 0
-            if 0.5 - e < EYE_CLOSURE:
-                self.flag(n)
             if 0.5 + wrap(edge - self.prev_theta) < EYE_CLOSURE:
                 self.flag(n - 1)
+            if 0.5 - e < EYE_CLOSURE:
+                self.flag(n)
         self.prev_bit, self.prev_theta = bit, theta
         d = phi - theta - self.lock
         while d > 0.75:
@@ -132,7 +132,7 @@ class Cdr:
             self.vote = self.in_block = 0
             while len(self.queue) > s['latency']:
                 self.apply(self.queue.pop(0))
-        return phi, theta
+        return edge, theta
 
     def apply(self, v):
         s = self.s
@@ -169,10 +169,10 @@ def jtol_at(s, hz, seed=7):
         for _ in range(4000):
             sim.step()
         sim.start_jitter(uipp)
-        before = sim.errors
+        before, slips_before = sim.errors, sim.slips
         for _ in range(length):
             sim.step()
-        return sim.errors == before
+        return sim.errors == before and sim.slips == slips_before
 
     lo, hi = 0.02, 20.0
     if not ok(lo):

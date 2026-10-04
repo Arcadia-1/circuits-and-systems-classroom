@@ -1,5 +1,5 @@
 /**
- * Bang-bang clock and data recovery for 56 GBd NRZ: an Alexander (early/late) phase detector, a decimated digital loop
+ * Bang-bang clock and data recovery for 56 GBd NRZ: an ideal transition-based early/late detector, a decimated digital loop
  * filter with proportional and integral paths, and a phase interpolator with 64 steps per UI. Every phase is in UI.
  * python/serdes_cdr.py is the executable reference.
  */
@@ -14,7 +14,7 @@ export const EYE_CLOSURE = 0.2;
 export type Pattern = 'prbs7' | 'prbs31' | 'cid';
 
 export interface CdrSettings {
-  /** Frequency offset of the data against the local reference, in ppm. */
+  /** Positive ppm means data edges arrive later: the local reference runs fast relative to the data. */
   ppm: number;
   /** Sinusoidal jitter, UI peak-to-peak, and its frequency in Hz. */
   sjUipp: number;
@@ -89,7 +89,7 @@ export interface UiSample {
   theta: number;
   /** Early (+1, clock must move later), late (−1) or no transition (0). */
   decision: number;
-  /** A bit was sampled wrongly: an edge crossed into the data sampler's keep-out zone. */
+  /** A timing-margin violation occurred; this is not a decoded bit error. */
   error: boolean;
 }
 
@@ -168,8 +168,9 @@ export class CdrSim {
       const e = wrap(edge - theta);
       decision = e > 0 ? 1 : e < 0 ? -1 : 0;
       // the data sampler of this bit sits 0.5 − e after the edge; that of the previous bit 0.5 + e' before it
-      if (0.5 - e < EYE_CLOSURE) error = this.flag(n);
-      if (0.5 + wrap(edge - this.prevTheta) < EYE_CLOSURE) error = this.flag(n - 1) || error;
+      // Visit bits in order so a bit flagged by both bounding edges is counted once.
+      if (0.5 + wrap(edge - this.prevTheta) < EYE_CLOSURE) error = this.flag(n - 1);
+      if (0.5 - e < EYE_CLOSURE) error = this.flag(n) || error;
     }
     this.prevBit = bit;
     this.prevTheta = theta;
@@ -187,7 +188,8 @@ export class CdrSim {
     return { n, bit, transition, phase: phi, edge, theta, decision, error };
   }
   private flag(bit: number): boolean {
-    if (bit !== this.lastErrorBit) {
+    if (bit < 0) return false;
+    if (bit > this.lastErrorBit) {
       this.lastErrorBit = bit;
       this.errors++;
     }
@@ -209,7 +211,7 @@ export class CdrSim {
 export const JTOL_HZ = [2e6, 5e6, 10e6, 20e6, 50e6, 100e6, 200e6, 500e6, 1e9];
 
 /**
- * Largest sinusoidal jitter (UIpp) with no timing-margin violations at one frequency: lock for 4000 UI,
+ * Largest sinusoidal jitter (UIpp) with no timing-margin violations or cycle slips at one frequency: lock for 4000 UI,
  * switch the jitter on, run 1.5 periods (at least 4000 UI), and bisect geometrically between 0.02 and 20 UIpp.
  */
 export function jtolAt(s: CdrSettings, hz: number, seed = 7): number {
@@ -218,9 +220,9 @@ export function jtolAt(s: CdrSettings, hz: number, seed = 7): number {
     const sim = new CdrSim({ ...s, sjUipp: 0, sjHz: hz }, seed);
     for (let i = 0; i < 4000; i++) sim.step();
     sim.startJitter(uipp);
-    const before = sim.errors;
+    const before = sim.errors, slipsBefore = sim.slips;
     for (let i = 0; i < len; i++) sim.step();
-    return sim.errors === before;
+    return sim.errors === before && sim.slips === slipsBefore;
   };
   let lo = 0.02, hi = 20;
   if (!ok(lo)) return 0;
@@ -237,20 +239,20 @@ export interface RunSummary {
   slips: number;
   errors: number;
   trackedPpm: number;
-  /** rms and peak of the wrapped phase error over the last half of the run, UI. */
+  /** rms and peak of the wrapped edge error (including random jitter) over the last half of the run, UI. */
   rmsUi: number;
   peakUi: number;
   code: number;
 }
 
-/** Run n UI from a locked start and summarise the second half, as the Python reference prints it. */
+/** Run n UI from a zero-phase start and summarise the second half, as the Python reference prints it. */
 export function run(s: CdrSettings, n: number, seed = 1): RunSummary {
   const sim = new CdrSim(s, seed);
   let sum2 = 0, peak = 0, count = 0;
   for (let i = 0; i < n; i++) {
     const u = sim.step();
     if (i >= n / 2) {
-      const e = wrap(u.phase - u.theta);
+      const e = wrap(u.edge - u.theta);
       sum2 += e * e;
       peak = Math.max(peak, Math.abs(e));
       count++;

@@ -40,6 +40,21 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
 
 ## Illustrations
 
+- **PLL introduction** at `/pll/introduction/`. An averaged phase-domain PLL with a linear detector, PI filter,
+  bounded VCO tuning and feedback divider. Compare open loop, P-only phase offset, type-II locking, damping and a
+  reference phase step. The clock sketch and chart cursor share frequency/phase state. Independent fine-step NumPy
+  integration and analytical equilibrium checks validate the model; this is not a nonlinear PFD acquisition model.
+- **Pipeline ADC introduction** at `/adc/pipeline-introduction/`. A three-stage radix-4 pipeline: two coarse ADC/DAC/
+  residue stages and a final flash produce six actual digital bits. The output uses code centres, without adding back
+  the analog residue. A clock-step schedule follows samples through three stage operations and aligns their digits,
+  separating three clocks from launch to output from one-sample-per-clock throughput. The existing 1.5-bit lesson
+  remains available as the next course. Tests compare every code boundary to a direct 6-bit quantizer.
+- **Nonlinear calibration** at `/adc/nonlinear-calibration/`. A known ramp trains a polynomial inverse using QR least
+  squares; a new coherent sine and independent noise validate the frozen coefficients. The transfer, error, harmonics,
+  SNDR and RMS error share the same data. Degree, coverage, noise, distortion and validation amplitude are adjustable.
+  Device changes invalidate the old fit; training-setting changes require retraining; validation never refits.
+  Explicit examples show extrapolation and clipping limits. NumPy lstsq and rfft provide independent references.
+
 - **Open-loop & closed-loop gain** at `/amplifiers/open-loop-and-closed-loop/`. Adjust A₀ and β independently in two cases.
   In **Hold open loop**, chosen A₀ and fOL remain fixed as β changes the closed-loop gain and bandwidth.
   In **Hold closed-loop BW**, the target fCL stays fixed and the model solves `fOL = fCL/(1 + βA₀)` and the required GBW.
@@ -87,11 +102,17 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   early/late decisions over 1–32 UI and applies
   proportional and integral corrections to a 64-step phase interpolator after a set latency; the page shows phase
   tracking, eyes folded by the recovered and by a free-running clock, cycle slips and timing-margin violations, and the jitter-tolerance
-  curve found by bisection. `python/serdes_cdr.py` reproduces the simulation bit for bit, random jitter included.
+  curve found by bisection with both margin violations and cycle slips as failures. The ideal transition-based
+  early/late detector is explicitly distinguished from Alexander three-sample logic. Margin counting deduplicates
+  bits across their two bounding edges, and RMS includes random jitter. Sweeps yield between frequencies. `python/serdes_cdr.py` reproduces the simulation bit for bit, random jitter included.
 - **PCI Express** at `/serdes/pci-express/`. A guided eight-step tour of a PCIe link on a 3-D motherboard: lanes as a
   pair each way, bytes dealt across x1–x16, the rate and line code of generations 1–7 (8b/10b, 128b/130b, PAM4 flits),
   a TLP inside its envelopes, ACK/NAK replay after noise damages a packet, and credit-based flow control. The traffic is
-  one direction of the link simulated event by event (credits, sequence numbers, a replay buffer and timer), and
+  one direction of a Gen 1–5 link simulated event by event (packet-slot credit abstraction, sequence numbers, a replay
+  buffer and timer). Gen 6–7 instead show the 256-byte FLIT fields, PAM4 baud rate and whole-FLIT isolated serialization;
+  the packed-stream payload upper bound is separately identified. Raw, coded and payload rates use distinct labels;
+  generation bars are linear. Device service time can cap utilization even with ample receive slots. The model explains
+  the separate real header/data credit pools and cumulative ACK simplification, and
   `python/serdes_pcie.py` reproduces the rates, the payload shares and the simulated runs.
 
 ## Adding an illustration
@@ -126,8 +147,8 @@ the ADCToolbox manual; its home page and tutorial paths redirect to the matching
 
 ## Editorial and visual direction
 
-Use **Circuits & Systems Classroom** as the site brand. The public catalog is intentionally small: four reviewed ADC
-lessons, one PLL lesson, one amplifier lesson, three SerDes lessons and the selected Bode-plot tool. Other experiments remain available by direct URL with `noindex`
+Use **Circuits & Systems Classroom** as the site brand. The public catalog is intentionally small: seven reviewed ADC
+lessons, two PLL lessons, one amplifier lesson, three SerDes lessons and the selected Bode-plot tool. Other experiments remain available by direct URL with `noindex`
 until they reach the same standard. The ADCToolbox manual remains the reference for the Python API and longer examples.
 
 Each entry has its own schematic preview so readers can recognize the experiment at a glance; model provenance and example

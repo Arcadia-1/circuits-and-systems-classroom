@@ -1,0 +1,9 @@
+---
+import Base from '../../layouts/Base.astro';
+import PllIntro from '../../illustrations/pll-intro/PllIntro.svelte';
+import '../../styles/illustration.css';
+import '../../styles/course.css';
+---
+<Base title="PLL introduction" description="See phase comparison, loop filtering, VCO tuning and feedback division lock a clock. Compare damping, proportional and integral control.">
+  <PllIntro client:load />
+</Base>
