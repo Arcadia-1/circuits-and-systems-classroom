@@ -14,9 +14,6 @@ export default defineConfig({
   site: 'https://circuits-and-systems.tokenzhang.com',
   output: 'static',
   trailingSlash: 'always',
-  redirects: {
-    '/adc/pipeline-introduction/': '/adc/pipeline-adc/',
-  },
   integrations: [svelte(), react(), sitemap({ filter: (page) => publicPages.has(new URL(page).pathname) })],
   build: { format: 'directory', inlineStylesheets: 'auto' },
 });

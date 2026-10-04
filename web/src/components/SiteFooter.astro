@@ -1,13 +1,13 @@
 ---
 import Visits from './Visits';
-interface Props { visits?: boolean; }
-const { visits = true } = Astro.props;
+interface Props { visits?: boolean; compact?: boolean; }
+const { visits = true, compact = false } = Astro.props;
 ---
-<footer class="site-footer">
+<footer class:list={['site-footer', { compact }]}>
   <div class="footer-inner">
-    <a class="brand" href="/">Circuits &amp; Systems Classroom</a>
+    {!compact && <a class="brand" href="/">Circuits &amp; Systems Classroom</a>}
     <nav aria-label="Footer navigation">
-      <a href="https://github.com/Arcadia-1/circuits-and-systems-classroom/blob/main/LICENSE">MIT License ↗</a>
+      <a href="https://github.com/Arcadia-1/circuits-and-systems-classroom/blob/main/LICENSE" aria-label="MIT License">{compact ? 'MIT' : 'MIT License ↗'}</a>
     </nav>
     <a href="https://tokenzhang.com">© {new Date().getFullYear()} Token Zhang</a>
     {visits && <Visits client:load path={Astro.url.pathname} counter />}
@@ -36,4 +36,16 @@ const { visits = true } = Astro.props;
   .footer-inner :global(.visitors:hover) { color: var(--ink); }
   @media (max-width: 900px) { .footer-inner { flex-wrap: wrap; gap: 10px 18px; } nav { margin-left: 0; } .footer-inner :global(.visitors) { margin-left: auto; } }
   @media (max-width: 600px) { .footer-inner { padding-inline: 20px; } nav { width: 100%; order: -1; } }
+  .site-footer.compact { height: var(--classroom-footer-height, 26px); min-height: 0; margin-top: 0; }
+  .compact .footer-inner { height: 100%; max-width: none; padding: 0 16px; flex-wrap: nowrap; gap: 16px; font-size: 10px; line-height: 1; }
+  .compact nav { width: auto; order: 0; margin-left: 0; }
+  .compact .footer-inner :global(.visitors) { margin-left: auto; font-size: 10px; text-underline-offset: 2px; }
+  @media (max-width: 600px) {
+    .compact .footer-inner { padding-inline: 10px; gap: 10px; }
+    .compact .footer-inner :global(.visitors) { font-size: 9px; }
+  }
+  @media (max-width: 380px) {
+    .compact .footer-inner { padding-inline: 8px; gap: 8px; font-size: 9px; }
+    .compact .footer-inner :global(.visitors) { font-size: 8.5px; }
+  }
 </style>

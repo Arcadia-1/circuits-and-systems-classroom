@@ -63,7 +63,7 @@ export const topics: Topic[] = [
       {
         href: '/adc/pipeline-adc/',
         title: 'Pipeline ADC',
-        summary: 'Explore linked transfer and residue curves as each stage resolves a finer input interval.',
+        summary: 'See how stage gain and nonlinearity change residue curves, ADC transfer, DNL and INL.',
         thumb: 'pipe-intro',
       },
       {

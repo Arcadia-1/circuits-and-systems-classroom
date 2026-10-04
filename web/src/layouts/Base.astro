@@ -11,14 +11,16 @@ interface Props {
   description: string;
   /** Disable analytics for pages that should not record a visit. */
   visits?: boolean;
+  /** Fit a lesson between the site header and a compact visitor footer. The lesson must size its own content. */
+  viewport?: boolean;
 }
-const { title, description, visits = true } = Astro.props;
+const { title, description, visits = true, viewport = false } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const holdFromIndex = isLessonPath(Astro.url.pathname) && !isPublicLessonPath(Astro.url.pathname);
 const siteName = 'Circuits & Systems Classroom';
 ---
 <!doctype html>
-<html lang="en">
+<html lang="en" class="light" data-viewport={viewport || undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -34,17 +36,32 @@ const siteName = 'Circuits & Systems Classroom';
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0a0d13" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f8fa" />
+    <meta name="color-scheme" content="light" />
     <ClientRouter />
     <Theme />
   </head>
-  <body transition:animate="none">
+  <body class:list={{ 'viewport-frame': viewport }} transition:animate="none">
     <a class="skip-link" href="#main-content">Skip to content</a>
     <SiteHeader pageTitle={isLessonPath(Astro.url.pathname) ? title : undefined} />
     <div id="main-content" tabindex="-1">
       <slot />
     </div>
-    <SiteFooter {visits} />
+    <SiteFooter {visits} compact={viewport} />
   </body>
 </html>
+
+<style>
+  html[data-viewport] { height: 100%; overflow: hidden; }
+  .viewport-frame {
+    --classroom-header-height: 49px;
+    --classroom-footer-height: 26px;
+    height: 100dvh;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: var(--classroom-header-height) minmax(0, 1fr) var(--classroom-footer-height);
+    overflow: hidden;
+  }
+  .viewport-frame #main-content { height: 100%; min-height: 0; min-width: 0; }
+  .viewport-frame #main-content > :global(astro-island) { display: block; height: 100%; min-height: 0; min-width: 0; }
+</style>

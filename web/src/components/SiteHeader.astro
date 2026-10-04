@@ -16,38 +16,9 @@ const { pageTitle } = Astro.props;
           <span>GitHub <span aria-hidden="true">↗</span></span>
         </a>
       </nav>
-      <button class="theme-toggle" type="button" aria-label="Switch color theme" title="Switch color theme" hidden>
-        <svg class="sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
-        <svg class="moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z" /></svg>
-      </button>
     </div>
   </div>
 </header>
-
-<script>
-  import { isLightTheme, THEME_KEY } from '../lib/theme';
-
-  function updateButton() {
-    const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
-    const light = isLightTheme();
-    if (button) {
-      button.setAttribute('aria-label', `Switch to ${light ? 'dark' : 'light'} mode`);
-      button.title = `Switch to ${light ? 'dark' : 'light'} mode`;
-      button.hidden = false;
-    }
-  }
-  // The header is replaced on every Astro navigation; delegate to the current button.
-  document.addEventListener('click', (event) => {
-    if (!(event.target instanceof Element) || !event.target.closest('.theme-toggle')) return;
-    const light = !isLightTheme();
-    document.documentElement.classList.toggle('light', light);
-    document.documentElement.classList.toggle('dark', !light);
-    try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch {}
-    updateButton();
-  });
-  document.addEventListener('astro:page-load', updateButton);
-  updateButton();
-</script>
 
 <style>
   .site-header { position: sticky; top: 0; z-index: 40; border-bottom: 1px solid var(--rule-soft); background: color-mix(in srgb, var(--ground) 88%, transparent); backdrop-filter: blur(14px); }
@@ -63,11 +34,6 @@ const { pageTitle } = Astro.props;
   nav a:hover { color: var(--ink); }
   .github { color: var(--ink); }
   .github span span { color: var(--ink-2); }
-  .theme-toggle { display: flex; align-items: center; justify-content: center; width: 36px; height: 40px; padding: 0; border: 0; background: none; color: var(--ink-2); cursor: pointer; }
-  .theme-toggle[hidden] { display: none; }
-  .theme-toggle:hover { color: var(--brand); }
-  .moon, :global(html.light) .sun { display: none; }
-  :global(html.light) .moon { display: block; }
   @media (max-width: 1100px) {
     .bar { column-gap: 12px; }
     .brand-name { display: none; }

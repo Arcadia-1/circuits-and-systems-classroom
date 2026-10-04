@@ -1,139 +1,92 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Range from '../../components/ui/Range.svelte';
-  import PipelineCurve from './PipelineCurve.svelte';
-  import { convert, pipelineAt, samples } from './model';
-  import { prefix } from './curves';
+  import SixCurves from './SixCurves.svelte';
+  import { TOPOLOGIES, convertPipeline, inspectionWindow } from './configurable';
+  import { convertWithErrors, analyzeLinearity } from './errors';
 
-  let input = $state(.68), sweeping = $state(false), zoom = $state(false), clock = $state(3);
-  let stage = $state<1 | 2>(1), resolution = $state<1 | 2 | 3>(3);
-  const conversion = $derived(convert(input));
-  const resolved = $derived(prefix(input, stage));
-  const output = $derived(prefix(input, resolution));
-  const coarse = $derived(Math.min(3, Math.floor(input * 4)) / 4);
-  const domain = $derived<[number, number]>(zoom ? [coarse, coarse + .25] : [0, 1]);
-  const stream = $derived(samples(input));
-  const timing = $derived(pipelineAt(clock, stream));
-  const name = (i: number) => String.fromCharCode(65 + i);
-  const bits = (n: number, width: number) => n.toString(2).padStart(width, '0');
-
-  onMount(() => {
-    let last = performance.now();
-    const timer = window.setInterval(() => {
-      const now = performance.now();
-      if (sweeping) {
-        input = Math.min(1, input + Math.min(now - last, 100) / 12000);
-        if (input >= 1) sweeping = false;
-      }
-      last = now;
-    }, 32);
-    return () => clearInterval(timer);
+  let topologyId=$state('ten'), input=$state(.68), pair=$state(0), playing=$state(false), magnify=$state(false);
+  let errorStage=$state(0), gainError=$state(.5), nonlinearity=$state(0), mobileView=$state<'curves'|'linearity'>('curves');
+  let notes:HTMLDialogElement|undefined=$state();
+  const topology=$derived(TOPOLOGIES.find(t=>t.id===topologyId)!);
+  const settings=$derived({stage:errorStage,gainError,nonlinearity});
+  const analysis=$derived(analyzeLinearity(topology.bits,settings));
+  const conversion=$derived(convertWithErrors(input,topology.bits,settings));
+  const first=$derived(Math.min(pair,topology.bits.length-3));
+  const window=$derived(inspectionWindow(convertPipeline(input,topology.bits),first));
+  const codeBlock=$derived(Math.min(Math.floor(input*conversion.levels/16)*16,conversion.levels-16)/conversion.levels);
+  const domain=$derived<[number,number]>(magnify?[Math.max(window[0],codeBlock),Math.min(window[1],codeBlock+16/conversion.levels)]:window);
+  const binary=(v:number,n:number)=>v.toString(2).padStart(n,'0');
+  const percent=(v:number)=>`${v>0?'+':''}${v.toFixed(2)}%`;
+  function changeTopology(){pair=0;errorStage=0;magnify=false;playing=false;}
+  function followErrorStage(){pair=Math.min(errorStage,topology.bits.length-3);magnify=false;}
+  function ideal(){gainError=0;nonlinearity=0;}
+  onMount(()=>{
+    let frame=0,last=performance.now(),direction=1;
+    const run=(now:number)=>{
+      const dt=Math.min(.05,(now-last)/1000);last=now;
+      if(playing){input=Math.min(1,Math.max(0,input+direction*dt/18));if(input===1)direction=-1;if(input===0)direction=1;}
+      frame=requestAnimationFrame(run);
+    };
+    frame=requestAnimationFrame(run);return()=>cancelAnimationFrame(frame);
   });
 </script>
 
-<main class="pipeline-lesson">
-  <div class="lesson-lead"><p>Coarse steps. Amplified residue. Finer steps.</p><span>Ideal 2 bits per stage · 0–1 V</span></div>
-  <div class="input-bar">
-    <div class="input-control"><Range id="pipeline-input" bind:value={input} min={0} max={1} step={.001} onstart={() => sweeping = false} output={`${input.toFixed(3)} V`}>Input voltage</Range></div>
-    <button class="sweep" aria-pressed={sweeping} onclick={() => { if (input >= 1) input = 0; sweeping = !sweeping; }}>{sweeping ? 'Pause sweep' : 'Sweep input'}<span aria-hidden="true">{sweeping ? 'Ⅱ' : '↗'}</span></button>
+<main class="pipeline-lab">
+  <div class="lab-toolbar">
+    <div class="architecture"><label for="pipeline-architecture">Architecture</label><select id="pipeline-architecture" bind:value={topologyId} onchange={changeTopology}>{#each TOPOLOGIES as t}<option value={t.id}>{t.label}</option>{/each}</select></div>
+    <div class="pair-picker"><label for="residue-pair">Show residues</label><select id="residue-pair" bind:value={pair} disabled={topology.bits.length===3}>{#each Array.from({length:topology.bits.length-2},(_,i)=>i) as i}<option value={i}>Stages {i+1} & {i+2}</option>{/each}</select></div>
+    <label class="magnify"><input type="checkbox" bind:checked={magnify}/> Zoom · 16 LSB</label>
+    <button class="notes" aria-label="Model notes" title="Model notes" onclick={()=>notes?.showModal()}>ⓘ</button>
   </div>
-
-  <section class="residue-section" aria-label="Linked transfer and residue curves">
-    <div class="section-head">
-      <div class="section-title"><span class="section-number">01</span><h2>Resolve a range. Expand what remains.</h2></div>
-      <div class="segmented" role="group" aria-label="Residue stage">{#each [1, 2] as s}<button aria-pressed={stage === s} onclick={() => stage = s as 1 | 2}>Stage {s}</button>{/each}</div>
-    </div>
-    <div class="curve-pair">
-      <figure>
-        <figcaption><h3>Input resolved so far</h3><span>{4 ** stage} coarse intervals</span></figcaption>
-        <div class="legend"><span class="blue">Resolved lower edge</span><span class="neutral dashed">Input</span><span class="orange">Unresolved gap</span></div>
-        <div class="curve large"><PipelineCurve kind="resolved" {input} stages={stage} /></div>
-        <p class="curve-note">{stage === 1 ? 'The first 2-bit decision selects one of four input ranges.' : 'Two decisions narrow the input to one of sixteen ranges.'}</p>
-      </figure>
-      <figure>
-        <figcaption><h3>Residue after stage {stage}</h3><span class="orange-text">{4 ** stage} ramps · 0–1 V again</span></figcaption>
-        <div class="legend"><span class="orange">Amplified residue</span><span class="neutral dashed">Before this stage’s ×4 gain</span></div>
-        <div class="curve large"><PipelineCurve kind="residue" {input} stages={stage} /></div>
-        <p class="curve-note">Each selected interval becomes a full-scale ramp for the next ADC.</p>
-      </figure>
-    </div>
-    <div class="equation-strip">
-      <span>r<sub>{stage}</sub> = 4 × ( {stage === 1 ? 'Vᵢₙ' : 'r₁'} − DAC<sub>{stage}</sub> )</span>
-      <span class="calculation">4 × ({conversion.stages[stage - 1].input.toFixed(3)} − {conversion.stages[stage - 1].dac.toFixed(3)}) = <b>{conversion.stages[stage - 1].residue.toFixed(3)} V</b></span>
-      <small>Both plots use original Vᵢₙ on the x-axis.{stage === 2 ? ' The left staircase includes both decisions.' : ''}</small>
-    </div>
-  </section>
-
-  <section class="output-section" aria-label="ADC transfer curve">
-    <div class="section-head">
-      <div class="section-title"><span class="section-number">02</span><h2>More stages, smaller steps.</h2></div>
-      <div class="segmented" role="group" aria-label="Resolved output bits">{#each [1, 2, 3] as s}<button aria-pressed={resolution === s} onclick={() => resolution = s as 1 | 2 | 3}>{2 * s} bits</button>{/each}</div>
-    </div>
-    <div class="output-head"><div class="legend"><span class="blue">{4 ** resolution} code centres</span><span class="neutral dashed">Ideal y = x</span></div><label class="zoom"><input type="checkbox" bind:checked={zoom} /> Zoom into the selected ¼ V interval</label></div>
-    <div class="curve output"><PipelineCurve kind="output" {input} stages={resolution} {domain} /></div>
-    <div class="output-readout" aria-live="off"><span><b>{bits(output.code, 2 * resolution)}</b><small>code {output.code}</small></span><span>{output.estimate.toFixed(5)} V<small>code centre</small></span><span>{(1000 / output.levels).toFixed(3)} mV<small>step width · 1 LSB</small></span><span>{(1000 * output.error).toFixed(3)} mV<small>quantization error</small></span></div>
-    <p class="curve-note">The third stage is a final 2-bit flash. Its decision completes the 6-bit code; no analog residue is added to the output.</p>
-  </section>
-
-  <details class="timing">
-    <summary>Why “pipeline”? Three clocks of latency, then one result per clock.</summary>
-    <div class="timing-controls"><span>After clock <b>{clock}</b></span><button disabled={clock === 0} onclick={() => clock--}>Previous clock</button><button disabled={clock === 10} onclick={() => clock++}>Next clock</button><button onclick={() => clock = 0}>Reset</button><span>{timing.output ? `Sample ${name(timing.output.sample)} → ${bits(timing.output.code, 6)}` : 'Filling the pipeline'}</span></div>
-    <div class="schedule-wrap"><table aria-label="Sample progress at each clock"><thead><tr><th>After clock</th>{#each Array.from({length:10},(_,i)=>i+1) as c}<th class:now={c===clock}><button aria-label={`Inspect clock ${c}`} aria-pressed={c===clock} onclick={()=>clock=c}>{c}</button></th>{/each}</tr></thead><tbody>{#each ['Stage 1 result','Stage 2 result','Stage 3 / output'] as label,j}<tr><th>{label}</th>{#each Array.from({length:10},(_,i)=>i+1) as c}{@const sample=c-1-j}<td class:now={c===clock}>{sample>=0&&sample<stream.length ? name(sample) : '·'}</td>{/each}</tr>{/each}</tbody></table></div>
-    <p>A launches at clock 0 and completes at clock 3. Earlier digits are delayed to align with the final digit. This ideal schedule assigns one clock per stage.</p>
-  </details>
-  <details class="model-notes"><summary>Model & curve conventions</summary><p>Ideal, nonredundant 2-bit stages, each with thresholds at ¼, ½ and ¾ V. Stage 1 and stage 2 subtract their local DAC level q/4 and apply gain 4. On the original input axis, the resolved lower edge after stage {stage} is {resolved.code}/{resolved.levels}; its unresolved gap is magnified by {4 ** stage} across those stages. The final ADC transfer shows bin centres, not DAC lower edges. Open circles exclude the left-hand limit at a jump; filled endpoints show the value at the threshold. The full 6-bit converter saturates at code 63. Real converters add redundancy and must allow for settling, noise and mismatch.</p></details>
+  <div class="error-controls" aria-label="Residue amplifier error injection">
+    <div class="injection"><label for="error-stage">Error in</label><select id="error-stage" bind:value={errorStage} onchange={followErrorStage}>{#each topology.bits.slice(0,-1) as _,i}<option value={i}>Stage {i+1}</option>{/each}</select></div>
+    <div class="error-range"><Range id="gain-error" bind:value={gainError} min={-2} max={2} step={.02} output={percent(gainError)}>Gain error</Range></div>
+    <div class="error-range"><Range id="nonlinearity" bind:value={nonlinearity} min={-2} max={2} step={.02} output={percent(nonlinearity)}>Nonlinearity</Range></div>
+    <button class="ideal" onclick={ideal}>Reset ideal</button>
+  </div>
+  <div class="context">
+    <div class="legend"><span class="actual"></span> Actual <span class="reference"></span> Ideal <span class="architecture-note">· {conversion.totalBits}-bit, nonredundant</span></div>
+    <div class="mobile-tabs" role="group" aria-label="Plot group"><button class:active={mobileView==='curves'} onclick={()=>mobileView='curves'} aria-pressed={mobileView==='curves'}>Curves</button><button class:active={mobileView==='linearity'} onclick={()=>mobileView='linearity'} aria-pressed={mobileView==='linearity'}>DNL / INL</button></div>
+    <span class:missing={analysis.missingCodes.length>0}>{analysis.missingCodes.length} missing codes <span class="full-range">· {magnify?'selected window · full-range extrema':'right plots: full range'}</span></span>
+  </div>
+  <section class="plots" aria-label="Six pipeline ADC plots"><SixCurves bits={topology.bits} {settings} {analysis} {conversion} {first} {domain} {magnify} {mobileView}/></section>
+  <div class="control-deck">
+    <button class="play" aria-label={playing?'Pause input sweep':'Sweep input'} aria-pressed={playing} onclick={()=>playing=!playing}><span aria-hidden="true">{playing?'Ⅱ':'▷'}</span><span>{playing?'Pause':'Sweep'}</span></button>
+    <div class="input-control"><Range id="pipeline-input" bind:value={input} min={0} max={1} step={1/65536} output={`${input.toFixed(6)} V`} onstart={()=>playing=false}>Input voltage</Range></div>
+    <div class="output"><span>{conversion.totalBits}-BIT OUTPUT</span><b>{binary(conversion.code,conversion.totalBits)}</b><small>code {conversion.code}</small></div>
+  </div>
 </main>
 
+<dialog bind:this={notes} aria-labelledby="pipeline-notes-title">
+  <div class="dialog-head"><h2 id="pipeline-notes-title">One converter, six views</h2><button aria-label="Close model notes" onclick={()=>notes?.close()}>×</button></div>
+  <p>Each stage resolves b bits: q = clamp(floor(2ᵇu), 0, 2ᵇ − 1), DAC = q / 2ᵇ, and ideal residue r = 2ᵇ(u − DAC). The final flash adds bits without another residue amplifier. The 10-stage preset is 9 × 1 bit + 3 bits = 12 bits.</p>
+  <p>The selected amplifier produces F(r) = (1 + g)r + 4nr(1 − r)(2r − 1), where g and n are the two percentage settings divided by 100. The cubic term preserves both endpoints. Analog residue is never clipped; subsequent digital decisions saturate. One amplifier has errors at a time.</p>
+  <p>DNL[k] = (T[k + 1] − T[k]) / LSB − 1, with nominal LSB = 1 / {analysis.levels} V. It includes the measured widths of the first and last bins. A zero-width code has DNL = −1. INL uses a line through the first and last observed transitions, in fitted LSBs; unreachable transitions are omitted. {analysis.endpointCodes?`Current fit: transitions ${analysis.endpointCodes[0]}–${analysis.endpointCodes[1]}.`:''}</p>
+  <p>Conversion error = (nominal code-centre voltage − input) / nominal LSB; it includes quantization. Left plots share an input window; later residue pairs use a nominal prefix interval, and zoom shows 16 nominal input LSBs on both columns. Without zoom, right plots cover the full input/code range. Their numerical extrema and INL endpoint fit always use the full input range.</p>
+  <p>This is a static, nonredundant pipeline model. Redundant decision stages, digital correction, settling and noise are not modeled.</p>
+</dialog>
+
 <style>
-  .pipeline-lesson { max-width:1320px; margin:0 auto; padding:26px 32px 38px; }
-  .lesson-lead { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:22px; }
-  .lesson-lead p { margin:0; font-size:clamp(18px,2vw,24px); font-weight:500; letter-spacing:-.035em; }
-  .lesson-lead > span { font-size:12px; color:var(--ink-3); }
-  .input-bar { display:flex; align-items:center; gap:24px; margin-bottom:28px; }
-  .input-control { width:460px; max-width:100%; }
-  .input-control :global(.range) { display:grid; grid-template-columns:1fr auto; grid-template-areas:'label value' 'slider slider'; gap:7px; }
-  .input-control :global(label) { grid-area:label; }
-  .input-control :global(input) { grid-area:slider; width:100%; accent-color:var(--s2); }
-  .input-control :global(output) { grid-area:value; width:auto; font-size:16px; }
-  button { color:var(--ink-2); background:transparent; border:1px solid var(--rule); border-radius:6px; padding:7px 12px; font:500 12px var(--sans); cursor:pointer; }
-  button:hover { border-color:var(--ink-3); color:var(--ink); } button:disabled { opacity:.4; cursor:default; }
-  .sweep { display:flex; gap:16px; align-items:center; margin-top:10px; }
-  .sweep[aria-pressed='true'] { background:var(--s2-soft); border-color:var(--s2); color:var(--s2); }
-  .residue-section,.output-section { background:var(--plot); padding:23px 26px 0; border:1px solid var(--rule); border-radius:10px; }
-  .output-section { margin-top:22px; padding-bottom:18px; }
-  .section-head { display:flex; justify-content:space-between; align-items:center; gap:14px; margin-bottom:23px; }
-  .section-title { display:flex; gap:12px; align-items:center; } .section-number { font:12px var(--mono); color:var(--ink-3); border-right:1px solid var(--rule); padding-right:12px; }
-  h2 { margin:0; font-size:17px; font-weight:500; letter-spacing:-.025em; }
-  .segmented { display:flex; padding:3px; border:1px solid var(--rule); border-radius:7px; background:var(--ground); flex-shrink:0; }
-  .segmented button { border:0; padding:6px 15px; white-space:nowrap; }
-  .segmented button[aria-pressed='true'] { background:var(--ink); color:var(--plot); box-shadow:0 1px 3px #0001; }
-  .curve-pair { display:grid; grid-template-columns:1fr 1fr; gap:38px; } figure { margin:0; min-width:0; }
-  figcaption { display:flex; gap:8px; align-items:baseline; justify-content:space-between; margin-bottom:10px; }
-  h3 { font-size:14px; margin:0; font-weight:600; } figcaption > span { color:var(--ink-3); font-size:11px; }
-  .legend { display:flex; flex-wrap:wrap; gap:8px 16px; color:var(--ink-3); font-size:11px; }
-  .legend > span::before { content:''; display:inline-block; width:17px; border-top:2px solid currentColor; vertical-align:middle; margin-right:6px; }
-  .legend .dashed::before { border-top-style:dashed; } .blue { color:var(--s1); } .orange,.orange-text { color:var(--s2); }
-  .curve { display:flex; margin-top:10px; } .curve.large { height:300px; } .curve.output { height:270px; }
-  .curve-note { margin:8px 0 18px; color:var(--ink-3); font-size:12px; line-height:1.6; }
-  .equation-strip { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px 24px; padding:14px 0; margin-top:6px; border-top:1px solid var(--rule-soft); font:13px var(--mono); }
-  .equation-strip > span:first-child { color:var(--s2); } .calculation { color:var(--ink-2); } .calculation b { font-weight:500; color:var(--s2); }
-  .equation-strip small { font:11px/1.5 var(--sans); color:var(--ink-3); flex:1 1 210px; }
-  .output-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
-  .zoom { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2); cursor:pointer; } .zoom input { accent-color:var(--s1); }
-  .output-readout { display:flex; flex-wrap:wrap; gap:14px 34px; border-top:1px solid var(--rule-soft); padding-top:12px; font:14px var(--mono); }
-  .output-readout > span { display:flex; align-items:baseline; gap:8px; } .output-readout small { font:11px var(--sans); color:var(--ink-3); }
-  .output-readout b { color:var(--s1); font-weight:500; letter-spacing:.08em; } .output-section > .curve-note { margin-bottom:0; }
-  details { font-size:12px; color:var(--ink-2); line-height:1.7; margin-top:18px; } summary { cursor:pointer; } details p { max-width:95ch; }
-  .timing-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:14px; }
-  .schedule-wrap { overflow-x:auto; margin-top:15px; } table { border-collapse:collapse; width:100%; min-width:620px; text-align:center; font:12px var(--mono); } th,td { padding:8px 4px; border-bottom:1px solid var(--rule); } th:first-child { text-align:left; width:150px; font-size:11px; } th button { padding:4px 8px; } .now { background:var(--brand-soft); }
-  @media(max-width:1000px) { .pipeline-lesson { padding:24px; } .curve-pair { gap:22px; } figcaption { display:block; } figcaption > span { display:block; margin-top:4px; } }
+  .pipeline-lab { height:100%; min-height:0; display:grid; grid-template-rows:auto auto auto minmax(0,1fr) auto; gap:9px; padding:12px 22px 10px; }
+  .lab-toolbar { display:flex; gap:22px; align-items:center; }.architecture,.pair-picker,.injection { display:flex; align-items:center; gap:9px; }
+  label { font-size:11px; color:var(--ink-3); } select { background:var(--plot); color:var(--ink); font:500 12px var(--sans); border:1px solid var(--rule); border-radius:6px; padding:7px 28px 7px 10px; cursor:pointer; } select:disabled { opacity:.55; }
+  .magnify { display:flex; gap:6px; align-items:center; margin-left:auto; cursor:pointer; }.magnify input { accent-color:var(--brand); }
+  button { border:1px solid var(--rule); color:var(--ink-2); background:var(--plot); border-radius:6px; font:500 12px var(--sans); cursor:pointer; padding:7px 10px; }.notes { border:0; background:transparent; padding:3px; font-size:20px; }
+  .error-controls { display:grid; grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) auto; align-items:center; gap:24px; background:#edf3f7; border:1px solid #dce6ec; padding:9px 12px; border-radius:8px; }.error-range { min-width:0; }.error-range :global(.range) { display:grid; grid-template-columns:auto minmax(35px,1fr) 7ch; gap:10px; }.error-range :global(label) { font-size:11px; color:var(--ink-2); }.error-range :global(input) { width:100%; accent-color:#147a9c; }.error-range :global(output) { font-size:12px; width:auto; text-align:right; }.ideal { font-size:11px; }
+  .context { display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--ink-3); font:10px/1.4 var(--sans); padding:0 2px; }.legend { display:flex; align-items:center; gap:6px; }.actual,.reference { display:inline-block; width:18px; border-top:2px solid #008b91; }.reference { border-top:2px dashed #9ba7b5; margin-left:7px; }.missing { color:#b34645; font-weight:600; }.full-range { font-weight:400; color:var(--ink-3); }.mobile-tabs { display:none; }
+  .plots { min-height:0; min-width:0; }
+  .control-deck { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:22px; border:1px solid var(--rule); border-radius:9px; padding:10px 16px; background:var(--plot); }
+  .play { display:flex; align-items:center; gap:8px; background:#e7f3f4; color:#00696f; border-color:#b9dcdf; padding:9px 12px; }.play > span:first-child { font:16px/1 var(--sans); }
+  .input-control { min-width:0; }.input-control :global(.range) { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:14px; }.input-control :global(input) { width:100%; accent-color:var(--brand); }.input-control :global(output) { width:10ch; text-align:right; font-size:13px; }
+  .output { display:grid; grid-template-columns:auto auto; gap:1px 9px; padding-left:20px; border-left:1px solid var(--rule); }.output > span { grid-column:1/-1; font:8px var(--mono); color:var(--ink-3); letter-spacing:.08em; }.output b { font:15px var(--mono); color:#ad6b09; }.output small { align-self:center; font:10px var(--mono); color:var(--ink-3); }
+  dialog { width:calc(100% - 32px); max-width:580px; max-height:85dvh; overflow:auto; border:1px solid var(--rule); border-radius:12px; padding:22px; background:var(--plot); color:var(--ink); } dialog::backdrop { background:#17243455; backdrop-filter:blur(3px); }.dialog-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }.dialog-head h2 { margin:0; font-size:17px; font-weight:550; }.dialog-head button { border:0; padding:0 4px; font-size:22px; } dialog p { font-size:12px; line-height:1.7; color:var(--ink-2); margin:14px 0 0; }
+  @media(max-width:1100px) { .lab-toolbar { gap:12px; }.architecture > label { display:none; }.error-controls { gap:12px; }.error-range :global(.range) { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:'label value' 'slider slider'; gap:2px; }.error-range :global(label) { grid-area:label; }.error-range :global(input) { grid-area:slider; }.error-range :global(output) { grid-area:value; }.output small { display:none; } }
   @media(max-width:700px) {
-    .pipeline-lesson { padding:20px 14px 28px; } .lesson-lead { display:block; margin-bottom:18px; } .lesson-lead > span { display:block; margin-top:7px; }
-    .input-bar { gap:12px; margin-bottom:20px; } .input-control { flex:1; min-width:0; } .sweep { padding:8px; gap:8px; font-size:11px; }
-    .residue-section,.output-section { padding:17px 12px 0; } .section-head { flex-wrap:wrap; margin-bottom:20px; gap:12px; } h2 { font-size:16px; } .section-number { padding-right:8px; } .section-title { gap:8px; }
-    .curve-pair { grid-template-columns:1fr; gap:18px; } .curve.large { height:250px; } .curve.output { height:250px; }
-    figcaption { display:flex; } figcaption > span { margin:0; } .legend { gap:6px 12px; font-size:10px; }
-    .equation-strip { font-size:11px; gap:8px; } .equation-strip small { flex-basis:100%; }
-    .output-section { padding-bottom:16px; } .output-readout { display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:12px; } .output-readout > span { display:grid; gap:3px; }
+    .pipeline-lab { padding:8px 10px; gap:7px; }.lab-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:5px 8px; }.architecture { grid-column:1; }.architecture select { width:100%; }.pair-picker { grid-column:1; grid-row:2; }.pair-picker label { font-size:9px; }.pair-picker select { padding:5px 20px 5px 6px; font-size:10px; }.notes { grid-column:2; grid-row:1; }.magnify { grid-column:2; grid-row:2; font-size:9px; margin:0; max-width:115px; line-height:1.25; }
+    .error-controls { grid-template-columns:1fr 1fr; gap:7px 15px; padding:7px 9px; }.injection { grid-column:1; grid-row:1; gap:6px; }.injection label { font-size:10px; }.injection select { padding:4px 20px 4px 7px; font-size:10px; }.ideal { grid-column:2; grid-row:1; justify-self:end; padding:4px 7px; font-size:10px; }.error-range :global(label),.error-range :global(output) { font-size:10px; }
+    .context { font-size:9px; gap:6px; }.architecture-note,.full-range { display:none; }.legend { gap:4px; }.actual,.reference { width:12px; }.reference { margin-left:3px; }.mobile-tabs { display:flex; gap:2px; }.mobile-tabs button { font-size:9px; padding:4px 6px; background:transparent; border-color:transparent; }.mobile-tabs .active { background:#e3edf4; color:#145a78; }
+    .control-deck { gap:9px; padding:8px; }.play { padding:8px; }.play > span:last-child { display:none; }.input-control :global(.range) { grid-template-columns:1fr auto; grid-template-areas:'label value' 'slider slider'; gap:4px; }.input-control :global(label) { grid-area:label; font-size:8px; }.input-control :global(input) { grid-area:slider; }.input-control :global(output) { grid-area:value; font-size:10px; width:auto; }.output { padding-left:9px; }.output b { font-size:10px; }.output > span { font-size:7px; }
   }
+  @media(max-height:550px) { .mobile-tabs { display:flex; gap:2px; }.mobile-tabs button { font-size:9px; padding:2px 6px; background:transparent; border-color:transparent; }.mobile-tabs .active { background:#e3edf4; color:#145a78; }.pipeline-lab { padding:4px 10px; gap:4px; }.lab-toolbar { display:flex; gap:10px; }.architecture > label,.pair-picker > label,.notes { display:none; }.architecture select,.pair-picker select { padding:3px 20px 3px 7px; font-size:10px; }.magnify { margin-left:auto; font-size:9px; }.error-controls { padding:4px 8px; gap:12px; }.injection label { display:none; }.injection select,.ideal { font-size:9px; padding:3px 7px; }.error-range :global(label),.error-range :global(output) { font-size:9px; }.context { font-size:8px; }.control-deck { padding:4px 10px; }.play { padding:4px 8px; }.output b { font-size:11px; } }
 </style>

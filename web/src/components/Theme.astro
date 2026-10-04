@@ -1,10 +1,9 @@
-<!-- Apply the saved choice before first paint, including on a direct visit. -->
+<!-- Clear legacy dark preferences before first paint, including on a direct visit. -->
 <script is:inline>
   (() => {
-    let dark = false;
-    try { dark = localStorage.getItem('circuits-systems-theme') === 'dark'; } catch {}
-    document.documentElement.classList.toggle('dark', dark);
-    document.documentElement.classList.toggle('light', !dark);
+    document.documentElement.classList.remove('dark');
+    document.documentElement.classList.add('light');
+    try { localStorage.removeItem('circuits-systems-theme'); } catch {}
   })();
 </script>
 

@@ -3,8 +3,9 @@ import Base from '../../layouts/Base.astro';
 import PipelineIntro from '../../illustrations/pipeline-intro/PipelineIntro.svelte';
 ---
 <Base
+  viewport
   title="Pipeline ADC"
-  description="Explore linked transfer and residue curves to see how each pipeline ADC stage resolves finer input intervals."
+  description="Explore two residue curves and the ADC transfer alongside DNL, INL and conversion error; inject stage gain error and nonlinearity in one synchronized six-plot view."
 >
   <PipelineIntro client:load />
 </Base>

@@ -44,11 +44,19 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   bounded VCO tuning and feedback divider. Compare open loop, P-only phase offset, type-II locking, damping and a
   reference phase step. The clock sketch and chart cursor share frequency/phase state. Independent fine-step NumPy
   integration and analytical equilibrium checks validate the model; this is not a nonlinear PFD acquisition model.
-- **Pipeline ADC** at `/adc/pipeline-adc/`. Linked transfer and residue curves show a three-stage radix-4 pipeline:
-  two coarse ADC/DAC/residue stages and a final flash produce six actual digital bits. The output uses code centres,
-  without adding back the analog residue. Tests compare every code boundary to a direct 6-bit quantizer. This is the
-  single Pipeline ADC lesson; `/adc/pipeline-introduction/` redirects here. The former 1.5-bit implementation has been
-  removed because its output reconstruction used unquantized analog residue as if it were a digital correction.
+- **Pipeline ADC** at `/adc/pipeline-adc/`. Six synchronized plots fill one screen: two adjacent residue curves and
+  the complete ADC's code-centre transfer on the left, with DNL, INL and conversion error on the right. Inject gain
+  error and residue nonlinearity into a selected stage to connect its transfer distortion with the converter's errors.
+  Choose 12-bit architectures with ten stages
+  (nine 1-bit stages plus a final 3-bit flash), four 3-bit stages, or three 4-bit stages; a three-stage 6-bit preset remains
+  available. Later-stage inspection uses the nominal prefix input interval; a shared 16-LSB input magnifier exposes
+  the final staircase and local linearity patterns. Full-range endpoint fitting and reported extrema remain unchanged. The digital output concatenates actual decisions and never adds unquantized analog residue.
+  Tests cover every 12-bit boundary, full-scale saturation, allocation invariance, true residue branches, analytical
+  and independently bisected error-model thresholds, code-density widths, missing codes and observed-endpoint INL.
+  This is the only Pipeline ADC page. Production middleware redirects `/adc/pipeline-introduction/` without generating
+  a second static page. The course uses `Base viewport`: a 49 px header, flexible lesson area and 26 px visitor footer
+  share `100dvh`, without page scrolling. Narrow screens switch between the curves and linearity plot groups;
+  the visitor counter remains visible.
 - **Nonlinear calibration** at `/adc/nonlinear-calibration/`. A known ramp trains a polynomial inverse using QR least
   squares; a new coherent sine and independent noise validate the frozen coefficients. The transfer, error, harmonics,
   SNDR and RMS error share the same data. Degree, coverage, noise, distortion and validation amplitude are adjustable.
@@ -128,8 +136,9 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
 ## Analytics
 
 `analytics/` is the copyable first-party analytics module of analog-arena (`site/analytics` in Arcadia-1/analog-arena): the
-tracking hook, the dashboard page and styles, the world-map data, the HTTP routes and the Durable Object. It is identical
-to the source except for the page title; update it by copying the folder again. The host wires it in three places:
+tracking hook, the dashboard page and styles, the world-map data, the HTTP routes and the Durable Object. Host customizations
+include the page title, navigation-safe cleanup and the user's required light-only appearance. When updating the copied
+module, preserve those customizations and do not restore its theme switch. The host wires it in three places:
 
 - `src/components/Visits.tsx` calls `useVisitStats` on every page through `Base.astro` and shows the totals in every shared
   page footer.
@@ -155,10 +164,9 @@ Each entry has its own schematic preview so readers can recognize the experiment
 names belong inside the lesson notes. Keep the two-column editorial layout on wide screens and one column on phones.
 
 The shared header and footer, restrained borders, system sans font, Google Sans Code labels and green accent follow
-Analog Design Bench. Plot series use separate blue/amber colors. Pages start in light mode unless the reader explicitly
-chooses dark mode; that choice is stored locally under a site-specific key. The theme is applied before both the first
-paint and Astro navigation swaps, so WebGL scenes and eye diagrams match the page without a refresh. The former generic
-`theme` key is ignored.
+Analog Design Bench. Plot series use distinct, readable colors. All pages use light mode only, including analytics.
+There is no theme switch; legacy dark preferences are cleared before the first paint and Astro navigation swaps,
+so WebGL scenes and eye diagrams match the page without a refresh.
 
 ## Numerical verification
 

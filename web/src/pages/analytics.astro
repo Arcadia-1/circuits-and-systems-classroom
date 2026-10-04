@@ -5,10 +5,12 @@ import Theme from '../components/Theme.astro';
 import { ClientRouter } from 'astro:transitions';
 ---
 <!doctype html>
-<html lang="en">
+<html lang="en" class="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Site Analytics · Circuits &amp; Systems Classroom</title>
     <meta name="robots" content="noindex, follow" />
     <link rel="icon" href="/adc-toolbox-logo.svg?v=20260918" type="image/svg+xml" />
@@ -23,7 +25,7 @@ import { ClientRouter } from 'astro:transitions';
 
 <style is:global>
   /* What the module gets from its host in analog-arena: the mono font token and Tailwind's preflight. */
-  :root { --font-mono: "Google Sans Code Variable", "Google Sans Code", ui-monospace, "SF Mono", monospace; }
+  :root { color-scheme: light; --font-mono: "Google Sans Code Variable", "Google Sans Code", ui-monospace, "SF Mono", monospace; }
   *, ::before, ::after { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
   html { line-height: 1.5; -webkit-text-size-adjust: 100%; }
   h1, h2 { font-size: inherit; font-weight: inherit; }

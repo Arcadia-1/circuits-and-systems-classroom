@@ -1,18 +1,17 @@
 export const THEME_KEY = 'circuits-systems-theme';
 
-/** Start in light mode unless the reader explicitly selected dark mode. */
+/** Lessons and their canvas renderers use one light palette. */
 export function prefersLightTheme(): boolean {
-  try { return localStorage.getItem(THEME_KEY) !== 'dark'; }
-  catch { return true; }
+  return true;
 }
 
 export function applyTheme(root: HTMLElement = document.documentElement): void {
-  const light = prefersLightTheme();
-  root.classList.toggle('light', light);
-  root.classList.toggle('dark', !light);
+  root.classList.remove('dark');
+  root.classList.add('light');
+  try { localStorage.removeItem(THEME_KEY); } catch {}
 }
 
 /** Canvas renderers use the same default as CSS, even before hydration. */
 export function isLightTheme(): boolean {
-  return !document.documentElement.classList.contains('dark');
+  return true;
 }
