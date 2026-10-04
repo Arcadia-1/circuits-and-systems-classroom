@@ -39,9 +39,10 @@ function audit(settings: LinkSettings) {
 }
 
 describe('same-channel PAM4 eye comparison', () => {
-  let normal: ReturnType<typeof audit>, bypass: ReturnType<typeof audit>, stress: ReturnType<typeof audit>;
+  let normal: ReturnType<typeof audit>, feedback: ReturnType<typeof audit>, bypass: ReturnType<typeof audit>, stress: ReturnType<typeof audit>;
   beforeAll(() => {
-    normal = audit(BASE);
+    normal = audit({ ...BASE, dfe: false });
+    feedback = audit(BASE);
     bypass = audit({ ...BASE, dsp: false });
     stress = audit({ ...BASE, lossDb: 42, xtV: 2.1e-3, rxNoiseV: 0.6e-3, txFfe: false });
   }, 60000);
@@ -75,19 +76,36 @@ describe('same-channel PAM4 eye comparison', () => {
     for (const margin of stress.margins) expect(margin).toBeLessThan(0);
   });
 
-  it('draws the actual slicer input without switching feedback inside an eye window', () => {
-    for (const { eyes, rx } of [normal, bypass, stress]) {
-      const n = eyes.n - NFPRE - 1;
-      const feedback = rx.live.b1 * LEVELS[eyes.decision[(n - 1) & MASK]];
-      expect(eyes.decisionTrace[OS / 2]).toBe(eyes.centre[n & MASK]);
-      for (let i = 0; i <= OS; i++) {
-        expect(Math.abs(eyes.ffeTrace[OS / 2 + i] - eyes.decisionTrace[i] - feedback)).toBeLessThan(1e-6);
-      }
+  it('opens all three eyes at each repeated sampling phase across the displayed 2 UI', () => {
+    const eye = normal.eyes.eyes[2];
+    for (const x of [2, Math.floor(eye.width / 2), eye.width - 3]) {
+      const density = (v: number) => {
+        const y = Math.round((1.6 - v) / 3.2 * (eye.height - 1));
+        let sum = 0;
+        for (let dy = -2; dy <= 2; dy++) sum += eye.buf[(y + dy) * eye.width + x];
+        return sum;
+      };
+      const rails = LEVELS.map(density);
+      for (const rail of rails) expect(rail).toBeGreaterThan(100);
+      for (const threshold of [-2 / 3, 0, 2 / 3]) expect(density(threshold)).toBeLessThan(0.01 * Math.min(...rails));
     }
   });
 
+  it('applies DFE to the actual decision sample and reports its measured amplitude distribution', () => {
+    for (const { eyes, rx } of [normal, feedback, bypass, stress]) {
+      const n = eyes.n - NFPRE - 1;
+      const correction = rx.live.b1 * LEVELS[eyes.decision[(n - 1) & MASK]];
+      expect(eyes.centre[n & MASK]).toBeCloseTo(eyes.ffeTrace[OS] - correction, 6);
+      const m = eyes.measurements();
+      expect(m.histogram.counts.reduce((sum, count) => sum + count, 0)).toBe(m.bits / 2);
+      expect(m.histogram.range).toBeGreaterThan(1);
+    }
+    expect(normal.rx.live.b1).toBe(0);
+    expect(feedback.rx.live.b1).toBeGreaterThan(0.3);
+  });
+
   it('reports observed bits and SNR from the same decision stream', () => {
-    for (const run of [normal, bypass, stress]) {
+    for (const run of [normal, feedback, bypass, stress]) {
       const measured = run.eyes.measurements();
       expect(measured.bits).toBe(8192);
       expect(Math.abs(db(measured.snr) - run.snr)).toBeLessThan(0.6);

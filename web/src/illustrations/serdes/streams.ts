@@ -34,13 +34,13 @@ export class Receiver {
     this.a = a;
     this.dsp = dsp;
     this.taps = Float64Array.from(a.weights);
-    this.live = metrics(a.h, this.taps, a.noise, dsp);
+    this.live = metrics(a.h, this.taps, a.noise, dsp && a.dfe);
   }
   /** Take a new analysis; the taps keep their values and adapt from there. */
   retarget(a: LinkAnalysis, dsp: boolean): void {
     this.a = a;
     this.dsp = dsp;
-    this.live = metrics(a.h, this.taps, a.noise, dsp);
+    this.live = metrics(a.h, this.taps, a.noise, dsp && a.dfe);
   }
   /** Move the taps toward the MMSE solution with time constant tau; returns true while they are still moving. */
   adapt(dt: number, tau = 0.5): boolean {
@@ -51,7 +51,7 @@ export class Receiver {
       this.taps[i] += e * k;
       moved += Math.abs(e);
     }
-    this.live = metrics(this.a.h, this.taps, this.a.noise, this.dsp);
+    this.live = metrics(this.a.h, this.taps, this.a.noise, this.dsp && this.a.dfe);
     return moved > 0.02 * (Math.abs(target[NFPRE]) || 1);
   }
   /** Slow-motion time at which the ADC samples symbol n (symbol n leaves the driver at t ≈ n). */
@@ -169,16 +169,14 @@ export interface EyeReadout {
   /** Signal-to-error power ratio using the transmitted PAM4 levels as the reference. */
   snr: number;
   padSnr: number;
+  histogram: { counts: Uint16Array; range: number };
 }
 
 const MEASURE = 4096;
 
-/** Continuous intermediate eyes and a decision-conditioned post-DFE eye from the same received symbols. */
+/** Continuous analog/linear eyes and discrete post-DFE measurements from the same received symbols. */
 export class EyeStream {
   readonly eyes = [new EyeImage(256, 160), new EyeImage(256, 160), new EyeImage(256, 160)] as const;
-  /** One-UI decision eye: the preceding symbol's actual decision is held fixed over each target-symbol window. */
-  readonly decisionEye = new EyeImage(256, 160);
-  readonly decisionTrace = new Float32Array(OS + 1);
   /** Latest continuous FFE trace. DFE corrections are never applied between sampling instants. */
   readonly ffeTrace = new Float32Array(2 * OS + 1);
   /** DFE-corrected samples and the corresponding slicer decisions, once per symbol. */
@@ -196,6 +194,7 @@ export class EyeStream {
   private readonly residuals = new Float64Array(MEASURE);
   private readonly padResiduals = new Float64Array(MEASURE);
   private readonly wrongBits = new Uint8Array(MEASURE);
+  private readonly measuredValues = new Float32Array(MEASURE);
   private readonly sym = new Uint8Array(RING);
   private readonly value = new Float32Array(RING);
   private readonly pad: Float32Array[] = [];
@@ -216,7 +215,6 @@ export class EyeStream {
       this.analysis = a;
       this.warmup = 0;
       for (const eye of this.eyes) eye.buf.fill(0);
-      this.decisionEye.buf.fill(0);
       this.measured = this.errorPower = this.padErrorPower = this.bitErrors = 0;
       this.residuals.fill(0);
       this.padResiduals.fill(0);
@@ -243,8 +241,8 @@ export class EyeStream {
         wa[i] = Math.max(-1, Math.min(1, waveAt(a.adc, ma + i, this.value, MASK) + this.gauss() * a.sigAdc));
       }
       this.padCentre[n & MASK] = wp[OS];
-      this.eyes[0].trace(wp.subarray(OS / 2, 1.5 * OS + 1), a.padRange);
-      this.eyes[1].trace(wa.subarray(OS / 2, 1.5 * OS + 1), 1);
+      this.eyes[0].trace(wp, a.padRange);
+      this.eyes[1].trace(wa, 1);
       if (++this.warmup < NF) continue;
       // Apply the linear FFE at every phase, without inventing a held DFE waveform.
       const nd = n - NFPRE;
@@ -258,13 +256,10 @@ export class EyeStream {
       const sample = this.ffeTrace[OS] - feedback;
       this.centre[nd & MASK] = sample;
       this.decision[nd & MASK] = sample < -2 / 3 ? 0 : sample < 0 ? 1 : sample < 2 / 3 ? 2 : 3;
-      this.eyes[2].trace(this.ffeTrace.subarray(OS / 2, 1.5 * OS + 1), 1.6);
+      this.eyes[2].trace(this.ffeTrace, 1.6);
       // Let the previously uninitialized decision history settle before reporting steady-state measurements.
       if (this.warmup < NF + 32) continue;
-      // This is a decision-conditioned eye, not an invented continuous DAC output.
-      // Never stitch adjacent symbols' feedback offsets together. At phase 0 it is exactly the slicer input above.
-      for (let i = 0; i <= OS; i++) this.decisionTrace[i] = this.ffeTrace[OS / 2 + i] - feedback;
-      this.decisionEye.trace(this.decisionTrace, 1.6);
+      // A symbol-rate DFE defines only these decision samples. Do not extend its correction across an analog eye.
       const index = this.measured++ % MEASURE, symbol = this.sym[nd & MASK], decoded = this.decision[nd & MASK];
       const residual = (sample - LEVELS[symbol]) ** 2;
       const padResidual = (this.padCentre[nd & MASK] / a.padH0 - LEVELS[symbol]) ** 2;
@@ -276,11 +271,16 @@ export class EyeStream {
       this.residuals[index] = residual;
       this.padResiduals[index] = padResidual;
       this.wrongBits[index] = wrong;
+      this.measuredValues[index] = sample;
     }
   }
   measurements(): EyeReadout {
     const count = Math.min(MEASURE, this.measured);
-    return { bits: 2 * count, bitErrors: this.bitErrors, snr: count ? EA * count / Math.max(1e-20, this.errorPower) : 0, padSnr: count ? EA * count / Math.max(1e-20, this.padErrorPower) : 0 };
+    let range = 1.3;
+    for (let i = 0; i < count; i++) range = Math.max(range, Math.abs(this.measuredValues[i]) * 1.05);
+    const counts = new Uint16Array(128);
+    for (let i = 0; i < count; i++) counts[Math.min(counts.length - 1, Math.max(0, Math.floor((this.measuredValues[i] / range + 1) * 0.5 * counts.length)))]++;
+    return { bits: 2 * count, bitErrors: this.bitErrors, snr: count ? EA * count / Math.max(1e-20, this.errorPower) : 0, padSnr: count ? EA * count / Math.max(1e-20, this.padErrorPower) : 0, histogram: { counts, range } };
   }
   symbolAt(n: number): number {
     return this.sym[n & MASK];

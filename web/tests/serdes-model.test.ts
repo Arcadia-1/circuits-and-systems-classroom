@@ -6,15 +6,16 @@ import {
 import { EyeStream, Receiver, SymbolStream, plainPam4Eye } from '../src/illustrations/serdes/streams';
 
 const reference = readFileSync(new URL('../python/expected/serdes_112g_link.txt', import.meta.url), 'utf8').trim().split('\n');
-const rows = reference.slice(1).filter((line) => !line.startsWith('prbs13q')).map((line) => line.split(/\s+/).map(Number));
+const rows = reference.slice(1).filter((line) => !line.startsWith('prbs13q') && !line.startsWith('ffe ')).map((line) => line.split(/\s+/).map(Number));
+const linearRows = reference.filter((line) => line.startsWith('ffe ')).map((line) => line.slice(4).split(/\s+/).map(Number));
 const settings = (row: number[]): LinkSettings => ({
   lossDb: row[0], xtV: row[1] * 1e-3, rxNoiseV: row[2] * 1e-3, txFfe: row[3] === 1, autoCtle: row[4] === 1, gdc: -12, gdc2: -3, dsp: row[5] === 1,
 });
 const DEFAULT: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -9, gdc2: -3, dsp: true };
 
 describe('112G PAM4 link model', () => {
-  it.each(rows.map((row) => [row.slice(0, 6).join(' '), row] as const))('matches the NumPy reference for %s', (_, row) => {
-    const a = analyzeLink(settings(row));
+  it.each([...rows.map((row) => [row.slice(0, 6).join(' '), row, true] as const), ...linearRows.map((row) => [`FFE ${row.slice(0, 6).join(' ')}`, row, false] as const)])('matches the NumPy reference for %s', (_, row, dfe) => {
+    const a = analyzeLink({ ...settings(row), dfe });
     const [, , , , , , gdc, gdc2, phase, vga, hm1, h0, h1, padMv, snrDb, log10Ber, b1, w0] = row;
     expect(a.gdc).toBe(gdc);
     expect(a.gdc2).toBe(gdc2);
@@ -26,7 +27,7 @@ describe('112G PAM4 link model', () => {
     expect(a.padH0 * 1e3).toBeCloseTo(padMv, 3);
     expect(10 * Math.log10(a.snr)).toBeCloseTo(snrDb, 4);
     expect(Math.log10(berOf(a.snr))).toBeCloseTo(log10Ber, 3);
-    expect(metrics(a.h, a.weights, a.noise, row[5] === 1).b1).toBeCloseTo(b1, 5);
+    expect(metrics(a.h, a.weights, a.noise, a.dfe).b1).toBeCloseTo(b1, 5);
     expect(a.weights[NFPRE]).toBeCloseTo(w0, 5);
   });
 
@@ -56,14 +57,14 @@ describe('112G PAM4 link model', () => {
     }
   });
 
-  it('finds an MMSE optimum: no single-tap nudge raises the SNR', () => {
-    const a = analyzeLink(DEFAULT);
-    const best = metrics(a.h, a.weights, a.noise, true).snr;
+  it.each([false, true])('finds an MMSE optimum with DFE=%s: no single-tap nudge raises the SNR', (dfe) => {
+    const a = analyzeLink({ ...DEFAULT, dfe });
+    const best = metrics(a.h, a.weights, a.noise, dfe).snr;
     expect(best).toBeCloseTo(a.snr, 9);
     for (let i = 0; i < NF; i++) for (const d of [-1e-3, 1e-3]) {
       const w = Float64Array.from(a.weights);
       w[i] += d;
-      expect(metrics(a.h, w, a.noise, true).snr).toBeLessThanOrEqual(best * (1 + 1e-9));
+      expect(metrics(a.h, w, a.noise, dfe).snr).toBeLessThanOrEqual(best * (1 + 1e-9));
     }
   });
 

@@ -60,13 +60,14 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   tree), with the line voltage drawn in slow motion from the channel model. The model evaluates a causal channel
   (skin effect, dielectric loss and one echo), the IEEE 802.3ck COM-form CTLE, VGA and noise terms in the frequency
   domain, searches the CTLE and sampling phase for the best SNR and solves a 12-tap MMSE FFE with a one-tap DFE; the eye
-  diagrams and model error budget follow from it. The default Compare view shows the same received data before RX
-  equalization and after CTLE + FFE + DFE. Its one-UI decision eye holds the preceding decision fixed within each
-  target-symbol window; phase zero is exactly the value sent to the slicer, without stitching different feedback states.
-  Measured SNR and observed Gray-coded BER use the last 4,096 symbols from this eye stream, including DFE error
-  propagation. The ideal-feedback SNR and Gaussian BER estimate remain in Channel for comparison. The Stages view
-  exposes the intermediate ADC and FFE waveforms. Normal (28 dB) and stress (42 dB) presets make the distinction
-  between effective equalization and a failing link explicit. A Plain PAM4 view remains available as a TX-only reference.
+  diagrams and model error budget follow from it. The default FFE mode optimizes all ISI cursors without decision
+  feedback. Compare overlays continuous 2-UI windows before RX equalization and after CTLE + FFE, so all phases of
+  the eye come from the actual linear waveform. Optional FFE + DFE mode jointly designs the two equalizers and shows
+  the post-DFE decision-sample distribution; a symbol-rate feedback correction does not define a continuous waveform
+  between decisions. Measured SNR and observed Gray-coded BER use the last 4,096 symbols, including DFE error
+  propagation when enabled. The model SNR and Gaussian BER estimate remain in Channel for comparison. Stages exposes
+  the intermediate ADC and FFE waveforms. Normal (28 dB) and stress (42 dB) presets use FFE mode. A Plain PAM4 view
+  remains available as a TX-only reference. Tests check eye opening at repeated phases across the full 2-UI window.
   `python/serdes_112g_link.py` is the NumPy
   reference. three.js loads only on this page, as a lazy chunk.
 - **Clock and data recovery** at `/serdes/clock-and-data-recovery/`. A bang-bang CDR for 56 GBd NRZ, opened by a

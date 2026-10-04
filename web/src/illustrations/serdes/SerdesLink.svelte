@@ -16,11 +16,14 @@
     { value: 'overview', label: 'Overview' }, { value: 'tx', label: 'TX chip' }, { value: 'channel', label: 'Channel' }, { value: 'rx', label: 'RX chip' }, { value: 'adc', label: 'TI-ADC' },
   ];
   const LEVEL_NAMES = ['−3', '−1', '+1', '+3'];
-  const EXAMPLE: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -9, gdc2: -3, dsp: true };
-  const settingsKey = (s: LinkSettings) => JSON.stringify([s.lossDb, s.xtV, s.rxNoiseV, s.txFfe, s.dsp, s.autoCtle, s.autoCtle ? 0 : s.gdc, s.autoCtle ? 0 : s.gdc2]);
+  const EXAMPLE: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -17, gdc2: -3, dsp: true, dfe: false };
+  const settingsKey = (s: LinkSettings) => JSON.stringify([s.lossDb, s.xtV, s.rxNoiseV, s.txFfe, s.dsp, s.dfe, s.autoCtle, s.autoCtle ? 0 : s.gdc, s.autoCtle ? 0 : s.gdc2]);
 
-  let lossDb = $state(28), xtMv = $state(1.5), rxnMv = $state(0.8), txFfe = $state(true), dsp = $state(true);
-  let ctle = $state<'auto' | 'manual'>('auto'), gdc = $state(-9), gdc2 = $state(-3);
+  let lossDb = $state(28), xtMv = $state(1.5), rxnMv = $state(0.8), txFfe = $state(true);
+  let equalizer = $state<'off' | 'ffe' | 'dfe'>('ffe');
+  const dsp = $derived(equalizer !== 'off');
+  const dfe = $derived(equalizer === 'dfe');
+  let ctle = $state<'auto' | 'manual'>('auto'), gdc = $state(-17), gdc2 = $state(-3);
   let playing = $state(true), speed = $state(1), labels = $state(true), spin = $state(true);
   let view = $state<ViewName | null>('overview');
   let light = $state(true), noGl = $state(false);
@@ -42,7 +45,7 @@
   // Re-solve the link shortly after the settings stop moving; the running taps then adapt toward the new optimum.
   $effect(() => {
     const auto = ctle === 'auto';
-    const s: LinkSettings = { lossDb, xtV: xtMv * 1e-3, rxNoiseV: rxnMv * 1e-3, txFfe, dsp, autoCtle: auto, gdc: auto ? 0 : gdc, gdc2: auto ? 0 : gdc2 };
+    const s: LinkSettings = { lossDb, xtV: xtMv * 1e-3, rxNoiseV: rxnMv * 1e-3, txFfe, dsp, dfe, autoCtle: auto, gdc: auto ? 0 : gdc, gdc2: auto ? 0 : gdc2 };
     const timer = setTimeout(() => {
       const next = settingsKey(s);
       if (next === appliedSettings) return;
@@ -120,7 +123,6 @@
       if (playing || moving || eyeWasMoving || eyeModel !== a) {
         const k = Math.pow(0.955, dt * 60);
         for (const e of eyes.eyes) e.decay(k);
-        eyes.decisionEye.decay(k);
         eyes.run(!playing && !moving ? 4200 : Math.max(8, Math.round(44 * dt * 60)), rx);
         eyeModel = a;
       }
@@ -148,21 +150,21 @@
     view = v;
     scene?.flyTo(v);
   };
-  const example = $derived(ctle === 'auto' && dsp ? lossDb === 28 && xtMv === 1.5 && rxnMv === 0.8 && txFfe ? 'normal' : lossDb === 42 && xtMv === 2.1 && rxnMv === 0.6 && !txFfe ? 'stress' : null : null);
+  const example = $derived(ctle === 'auto' && equalizer === 'ffe' ? lossDb === 28 && xtMv === 1.5 && rxnMv === 0.8 && txFfe ? 'normal' : lossDb === 42 && xtMv === 2.1 && rxnMv === 0.6 && !txFfe ? 'stress' : null : null);
   function chooseExample(stress: boolean): void {
     lossDb = stress ? 42 : 28;
     xtMv = stress ? 2.1 : 1.5;
     rxnMv = stress ? 0.6 : 0.8;
     txFfe = !stress;
     ctle = 'auto';
-    dsp = true;
+    equalizer = 'ffe';
   }
   const slowMs = $derived(1000 / (UIPS * speed));
   const facts = $derived.by((): [string, string][] => {
     switch (picked) {
       case 'ctle': return [['g_DC / g_DC2', `${nf(a.gdc, 0)} / ${nf(a.gdc2, 0)} dB`], ['Boost, 28 GHz vs DC', `${nf(a.ctleBoostDb, 1)} dB`], ['Setting', ctle === 'auto' ? 'auto, best SNR' : 'manual']];
       case 'vga': return [['Gain', `${nf(20 * Math.log10(a.vga), 1)} dB`]];
-      case 'dsp': return [['Model SNR at slicer', `${nf(10 * Math.log10(live.snr), 1)} dB`], ['DFE b₁', dsp ? nf(live.b1, 3) : 'off']];
+      case 'dsp': return [['Model SNR at slicer', `${nf(10 * Math.log10(live.snr), 1)} dB`], ['DFE b₁', a.dfe ? nf(live.b1, 3) : 'off']];
       case 'cdr': return [['Sampling phase', `${nf(a.phaseUi, 2)} UI from the pulse peak`]];
       case 'chan': return [['Loss at 28 GHz', `${lossDb} dB bump to bump`], ['Velocity', '≈ 0.5 c, 2.7 mm per UI']];
       case 'txdsp': return [['Taps', txFfe ? '−0.10 / 0.75 / −0.15' : '0 / 1 / 0 (off)']];
@@ -199,8 +201,8 @@
         <h2 class="label">Receiver</h2>
         <div class="row"><span>CTLE</span><Segmented size="sm" label="CTLE setting" options={[{ value: 'auto', label: 'Auto' }, { value: 'manual', label: 'Manual' }]} bind:value={ctle} /></div>
         {#if ctle === 'manual'}<Range id="serdes-gdc" bind:value={gdc} min={-20} max={0} step={1} output={`${nf(gdc, 0)} dB`}><var>g</var><sub>DC</sub></Range>{/if}
-        <div class="row"><span>DSP</span><Segmented size="sm" label="Receiver DSP equalizer" options={[{ value: false, label: 'Off' }, { value: true, label: 'FFE + DFE' }]} bind:value={dsp} /></div>
-        <p class="hint">{ctle === 'auto' ? `auto: g_DC ${nf(a.gdc, 0)} dB, g_DC2 ${nf(a.gdc2, 0)} dB` : 'manual g_DC, g_DC2 kept'} · 12-tap FFE + 1-tap DFE</p>
+        <div class="row"><span>DSP</span><Segmented size="sm" label="Receiver DSP equalizer" options={[{ value: 'off', label: 'Off' }, { value: 'ffe', label: 'FFE' }, { value: 'dfe', label: 'FFE + DFE' }]} bind:value={equalizer} /></div>
+        <p class="hint">{ctle === 'auto' ? `auto: g_DC ${nf(a.gdc, 0)} dB, g_DC2 ${nf(a.gdc2, 0)} dB` : 'manual g_DC, g_DC2 kept'} · {dsp ? dfe ? '12-tap FFE + 1-tap DFE' : '12-tap FFE' : 'DSP bypassed'}</p>
         <Range id="serdes-rxn" bind:value={rxnMv} min={0.2} max={2.5} step={0.1} output={`${rxnMv.toFixed(1)} mV`}>RX input noise</Range>
       </section>
       <section>

@@ -5,6 +5,7 @@
   import { PRE, berOf, type BudgetPart, type LinkAnalysis, type Metrics } from './model';
   import PulseChart from './PulseChart.svelte';
   import ResponseChart from './ResponseChart.svelte';
+  import DecisionChart from './DecisionChart.svelte';
   import { plainPam4Eye, type EyeReadout, type EyeStream } from './streams';
 
   let { a, live, dsp, adapting, decisions, errors, light, eyes, measured }: {
@@ -43,8 +44,8 @@
       return;
     }
     if (tab === 'compare') {
-      if (canvases[0]) drawEye(canvases[0], eyes.eyes[0], { light, spanUi: 1, range: a.padRange, amplitude: null, corner: `±${Math.round(a.padRange * 1000)} mV` });
-      if (canvases[1]) drawEye(canvases[1], eyes.decisionEye, { light, spanUi: 1, range: 1.6, amplitude: 1, corner: 'levels ±1, ±⅓' });
+      if (canvases[0]) drawEye(canvases[0], eyes.eyes[0], { light, range: a.padRange, amplitude: null, corner: `±${Math.round(a.padRange * 1000)} mV` });
+      if (!a.dfe && canvases[1]) drawEye(canvases[1], eyes.eyes[2], { light, range: 1.6, amplitude: 1, corner: 'levels ±1, ±⅓' });
       return;
     }
     const styles = [
@@ -52,7 +53,7 @@
       { range: 1, amplitude: a.h[PRE], corner: '±1 FS · dashed: slicer' },
       { range: 1.6, amplitude: 1, corner: 'levels ±1, ±⅓' },
     ];
-    canvases.forEach((c, i) => c && drawEye(c, eyes.eyes[i], { light, spanUi: 1, ...styles[i] }));
+    canvases.forEach((c, i) => c && drawEye(c, eyes.eyes[i], { light, ...styles[i] }));
   }
   function sized(node: HTMLCanvasElement) {
     const ro = new ResizeObserver(() => {
@@ -79,20 +80,25 @@
   <Segmented size="sm" label="Scope view" options={[{ value: 'compare', label: 'Compare' }, { value: 'eyes', label: 'Stages' }, { value: 'plain', label: 'Plain PAM4' }, { value: 'channel', label: 'Channel' }]} bind:value={tab} />
   {#if tab === 'compare'}
     <figure class="eye comparison-eye"><figcaption><span class="label">Before RX EQ</span><span class="mono val">SNR {measured.bits ? nf(padSnrDb, 1) : '—'} dB</span></figcaption><canvas bind:this={canvases[0]} use:sized aria-label="PAM4 eye before receiver equalization, at the RX pad"></canvas></figure>
-    <figure class="eye comparison-eye"><figcaption><span class="label">{dsp ? 'After RX EQ' : 'DSP bypassed'}</span><span class="mono val">SNR {measured.bits ? nf(snrDb, 1) : '—'} dB</span></figcaption><canvas bind:this={canvases[1]} use:sized aria-label="PAM4 decision eye after receiver equalization"></canvas></figure>
-    <p class="response-note">Same data and channel. {dsp ? 'CTLE + FFE + DFE' : 'CTLE + VGA only'}. SNR and BER use these samples; centre line = sampling instant.</p>
-    {#if dsp}<p class="response-note">DFE eye: each 1-UI window uses the previous detected symbol for feedback.</p>{/if}
+    {#if a.dfe}
+      <figure class="eye"><figcaption><span class="label">After DFE · samples</span><span class="mono val">SNR {measured.bits ? nf(snrDb, 1) : '—'} dB</span></figcaption><div class="decision-chart"><DecisionChart histogram={measured.histogram} /></div></figure>
+      <p class="response-note">DFE corrects the decision samples. Four separated peaks show recovery of the PAM4 levels; dashed lines are slicer thresholds.</p>
+      <p class="response-note">Stages shows the continuous waveforms before DFE.</p>
+    {:else}
+      <figure class="eye comparison-eye"><figcaption><span class="label">{dsp ? 'After CTLE + FFE' : 'DSP bypassed'}</span><span class="mono val">SNR {measured.bits ? nf(snrDb, 1) : '—'} dB</span></figcaption><canvas bind:this={canvases[1]} use:sized aria-label="Continuous PAM4 eye after receiver equalization"></canvas></figure>
+      <p class="response-note">Same data and channel. Continuous waveforms overlaid in 2-UI windows. Centre line = sampling instant.</p>
+    {/if}
   {:else if tab === 'eyes'}
     <figure class="eye"><figcaption><span class="label">RX pad</span>after the channel<span class="mono val">h₀ {Math.round(a.padH0 * 1000)} mV</span></figcaption><canvas bind:this={canvases[0]} use:sized></canvas></figure>
     <figure class="eye"><figcaption><span class="label">ADC input</span>after CTLE + VGA<span class="mono val">h₀ {a.h[PRE].toFixed(2)} FS</span></figcaption><canvas bind:this={canvases[1]} use:sized></canvas></figure>
-    <figure class="eye"><figcaption><span class="label">{dsp ? 'FFE waveform' : 'ADC, normalized'}</span>{dsp ? 'before DFE' : 'DSP bypassed'}</figcaption><canvas bind:this={canvases[2]} use:sized></canvas></figure>
-    <p class="response-note">Intermediate waveforms, overlaid in 1-UI windows. The complete equalized result is in Compare.</p>
+    <figure class="eye"><figcaption><span class="label">{dsp ? 'FFE waveform' : 'ADC, normalized'}</span>{a.dfe ? 'before DFE' : dsp ? 'at slicer' : 'DSP bypassed'}</figcaption><canvas bind:this={canvases[2]} use:sized></canvas></figure>
+    <p class="response-note">Continuous waveforms, overlaid in 2-UI windows.</p>
   {:else if tab === 'plain'}
     <figure class="eye plain-eye"><figcaption><span class="label">PAM4 · TX reference</span><span class="mono val">56 GBd · 1 Vppd</span></figcaption><canvas bind:this={plainCanvas} use:sized aria-label="Plain PAM4 eye: 2 UI of the transmitter waveform, with four voltage levels and three eye openings"></canvas></figure>
     <p class="response-note">2-UI cuts from one waveform, directly overlaid. Four levels: −500, −167, +167, +500 mV.</p>
     <p class="response-note">TX driver only (two 50 GHz poles). No channel, equalizers or added noise. This reference is independent of the link settings.</p>
   {:else}
-    <span class="label">Model error budget · correct feedback</span>
+    <span class="label">Model error budget{a.dfe ? ' · correct feedback' : ''}</span>
     <div class="budget" role="img" aria-label="Model error budget, assuming correct DFE feedback">
       {#each PARTS as p (p.key)}<span style:width="{(100 * live.parts[p.key]) / live.total}%" style:background={p.color}></span>{/each}
     </div>
@@ -106,23 +112,23 @@
     <p class="response-note">TX → ADC includes TX FFE, driver, channel, CTLE and VGA.</p>
     <div class="chart">
       <div class="cap"><span class="label">Pulse response</span><span>at the ADC, cursors marked</span></div>
-      <PulseChart {a} {dsp} />
+      <PulseChart {a} />
     </div>
     <dl class="kv">
-      <dt>Model SNR · correct feedback</dt><dd class="mono">{nf(10 * Math.log10(live.snr), 1)} dB</dd>
+      <dt>Model SNR{a.dfe ? ' · correct feedback' : ''}</dt><dd class="mono">{nf(10 * Math.log10(live.snr), 1)} dB</dd>
       <dt>Gaussian BER estimate</dt><dd class="mono">{ber.toExponential(2)}</dd>
       <dt>Observed errors / bits</dt><dd class="mono">{measured.bitErrors} / {measured.bits.toLocaleString('en-US')}</dd>
       <dt>CTLE g<sub>DC</sub> / g<sub>DC2</sub></dt><dd class="mono">{nf(a.gdc, 0)} / {nf(a.gdc2, 0)} dB</dd>
       <dt>CTLE boost, 28 GHz vs DC</dt><dd class="mono">{nf(a.ctleBoostDb, 1)} dB</dd>
       <dt>VGA gain</dt><dd class="mono">{nf(20 * Math.log10(a.vga), 1)} dB</dd>
       <dt>Sampling phase</dt><dd class="mono">{nf(a.phaseUi, 2)} UI from peak</dd>
-      <dt>DFE tap b₁</dt><dd class="mono">{dsp ? nf(live.b1, 3) : 'off'}</dd>
+      <dt>DFE tap b₁</dt><dd class="mono">{a.dfe ? nf(live.b1, 3) : 'off'}</dd>
       <dt>Slow-motion decisions</dt><dd class="mono">{decisions.toLocaleString('en-US')} · {errors} errors</dd>
     </dl>
     <div class="about">
       <span class="label">Model</span>
       <p><b>Channel.</b> The distributed loss at 28 GHz is split 35% skin effect, exp(−a√(jf/f<sub>N</sub>)), and 65% dielectric, exp(−b(jf/f<sub>N</sub>)<sup>0.9</sup>), with f<sub>N</sub> = 28 GHz. One echo adds a small ripple (ρ₁ρ₂ = 0.02, 9 UI). The TX driver has two poles at 50 GHz, the RX front end one at 45 GHz.</p>
-      <p><b>Receiver.</b> The CTLE uses the IEEE 802.3ck COM reference form; Auto searches g<sub>DC</sub> 0 … −20 dB and g<sub>DC2</sub> ∈ {'{'}0, −3, −6{'}'} dB with the sampling phase for the best SNR. A VGA sets the rms to 0.3 FS. The 12-tap FFE and 1-tap DFE are the MMSE solution, which the running taps approach after every change.</p>
+      <p><b>Receiver.</b> The CTLE uses the IEEE 802.3ck COM reference form; Auto searches g<sub>DC</sub> 0 … −20 dB and g<sub>DC2</sub> ∈ {'{'}0, −3, −6{'}'} dB with the sampling phase for the best SNR. A VGA sets the rms to 0.3 FS. The 12-tap MMSE FFE cancels ISI on its own by default. FFE + DFE jointly optimizes it with one feedback tap, leaving the first postcursor for DFE to cancel.</p>
       <p><b>Noise and BER.</b> The model uses RX noise, crosstalk, ADC noise (0.010 FS rms), TX distortion (28 dB SNDR), and a 0.2 ps rms jitter budget. For Gray-coded PAM4, BER ≈ (3/4) Q(√(10<sup>SNR<sub>dB</sub>/10</sup>/5)) assumes Gaussian errors and correct past DFE decisions. The measured readouts use the last 4,096 eye-stream symbols and include DFE error propagation. SNR = signal power / mean squared error against the transmitted levels. No observed errors in this finite window is not proof of zero BER.</p>
       <p><b>Scale.</b> The animation runs about 7×10⁹ times slower than the link and is not to scale: a 30 cm trace holds about 110 symbols, 44 are drawn. <code>python/serdes_112g_link.py</code> is the NumPy reference the tests compare against.</p>
     </div>
@@ -155,6 +161,7 @@
   canvas { display: block; width: 100%; height: 104px; border-radius: 6px; background: var(--plot); box-shadow: inset 0 0 0 1px var(--rule); }
   .plain-eye canvas { height: 240px; }
   .comparison-eye canvas { height: 164px; }
+  .decision-chart { display: flex; height: 164px; border-radius: 6px; background: var(--plot); box-shadow: inset 0 0 0 1px var(--rule); }
   .chart { display: flex; flex-direction: column; gap: 2px; height: 170px; }
   .cap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; font-size: 12px; color: var(--ink-2); }
   .cap i { width: 10px; height: 2px; margin: 0 5px 3px 8px; vertical-align: middle; }

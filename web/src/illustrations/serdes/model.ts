@@ -1,6 +1,6 @@
 /**
  * 112G PAM4 link model: a causal channel and receiver chain evaluated in the frequency domain, turned into a sampled
- * pulse response, then equalized by an MMSE FFE with a one-tap DFE. Everything here is a pure function of the settings;
+ * pulse response, then equalized by an MMSE FFE with optional one-tap DFE. Everything here is a pure function of the settings;
  * python/serdes_112g_link.py is the executable reference.
  */
 import { fft } from '../../lib/fft';
@@ -171,8 +171,8 @@ export interface Metrics {
   total: number;
 }
 
-/** Error budget at the slicer for FFE taps w; with the DSP on, the DFE removes cursor +1. */
-export function metrics(h: Float64Array, w: Float64Array, nz: Noise, dsp: boolean): Metrics {
+/** Error budget at the slicer for FFE taps w; an enabled DFE removes cursor +1. */
+export function metrics(h: Float64Array, w: Float64Array, nz: Noise, dfe: boolean): Metrics {
   const kmin = -PRE - NFPRE, kmax = POST + NFPOST;
   let f0 = 0, f1 = 0, isi = 0, all = 0, wn = 0;
   for (let a = 0; a < NF; a++) wn += w[a] * w[a];
@@ -186,20 +186,20 @@ export function metrics(h: Float64Array, w: Float64Array, nz: Noise, dsp: boolea
     if (k === 0) f0 = s;
     else if (k === 1) {
       f1 = s;
-      if (!dsp) isi += s * s;
+      if (!dfe) isi += s * s;
     } else isi += s * s;
   }
   const g2 = f0 * f0 || 1e-12;
   const parts = { isi: (EA * isi) / g2, th: (nz.th2 * wn) / g2, xt: (nz.xt2 * wn) / g2, adc: (nz.adc2 * wn) / g2, jit: (nz.j2 * wn) / g2, tx: (STX2 * all) / g2 };
   const total = parts.isi + parts.th + parts.xt + parts.adc + parts.jit + parts.tx;
-  return { f0, b1: dsp ? f1 / (f0 || 1) : 0, snr: EA / total, parts, total };
+  return { f0, b1: dfe ? f1 / (f0 || 1) : 0, snr: EA / total, parts, total };
 }
 
 /**
- * MMSE FFE with an ideal one-tap DFE (or a plain gain when the DSP is off), normalised so the main cursor is 1. TX noise
+ * MMSE FFE with optional ideal one-tap DFE (or a plain gain when DSP is off), normalised so the main cursor is 1. TX noise
  * rides on every cursor, so it enters the normal equations over all rows; the solution then maximises the unbiased SNR.
  */
-export function design(h: Float64Array, nz: Noise, dsp: boolean): { w: Float64Array; snr: number } {
+export function design(h: Float64Array, nz: Noise, dsp: boolean, dfe = dsp): { w: Float64Array; snr: number } {
   const w = new Float64Array(NF);
   if (!dsp) w[NFPRE] = 1 / h[PRE];
   else {
@@ -213,7 +213,7 @@ export function design(h: Float64Array, nz: Noise, dsp: boolean): { w: Float64Ar
         for (let k = kmin; k <= kmax; k++) {
           const v = hk(k - a + NFPRE) * hk(k - b + NFPRE);
           all += v;
-          if (k !== 1) s += v;
+          if (!dfe || k !== 1) s += v;
         }
         A[a][b] = A[b][a] = EA * s + STX2 * all + (a === b ? s2 : 0);
       }
@@ -221,7 +221,7 @@ export function design(h: Float64Array, nz: Noise, dsp: boolean): { w: Float64Ar
     }
     solveInPlace(A, w);
   }
-  const m = metrics(h, w, nz, dsp);
+  const m = metrics(h, w, nz, dsp && dfe);
   for (let a = 0; a < NF; a++) w[a] /= m.f0;
   return { w, snr: m.snr };
 }
@@ -264,10 +264,13 @@ export interface LinkSettings {
   gdc: number;
   gdc2: number;
   dsp: boolean;
+  /** Enable decision feedback as well as the FFE. Defaults to true for the reference model. */
+  dfe?: boolean;
 }
 
 export interface LinkAnalysis {
   txFfe: boolean;
+  dfe: boolean;
   gdc: number;
   gdc2: number;
   /** VGA gain that puts the signal rms at 0.3 of ADC full scale. */
@@ -298,6 +301,7 @@ export interface LinkAnalysis {
 }
 
 export function analyzeLink(s: LinkSettings): LinkAnalysis {
+  const dfe = s.dsp && s.dfe !== false;
   const c = s.txFfe ? TX_FFE : ([0, 1, 0] as const);
   const channel = channelStages(s.lossDb);
   const pad = withTxFfe(pulse(channel), c);
@@ -332,7 +336,7 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
         slope += d * d;
       }
       const nz: Noise = { th2, xt2, adc2: SIG_ADC * SIG_ADC, j2: EA * slope * (RJ / UI) ** 2 };
-      const r = design(h, nz, s.dsp);
+      const r = design(h, nz, s.dsp, dfe);
       if (!best || r.snr > best.snr) best = { snr: r.snr, w: r.w, g, g2, ts, pi, vga, nz, h, p, rx };
     }
   }
@@ -357,6 +361,7 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
   const ct = [stage.ctle(best.g, best.g2)];
   return {
     txFfe: s.txFfe,
+    dfe,
     gdc: best.g,
     gdc2: best.g2,
     vga: best.vga,
