@@ -44,19 +44,23 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   bounded VCO tuning and feedback divider. Compare open loop, P-only phase offset, type-II locking, damping and a
   reference phase step. The clock sketch and chart cursor share frequency/phase state. Independent fine-step NumPy
   integration and analytical equilibrium checks validate the model; this is not a nonlinear PFD acquisition model.
-- **Pipeline ADC** at `/adc/pipeline-adc/`. Six synchronized plots fill one screen: two adjacent residue curves and
-  the complete ADC's code-centre transfer on the left, with DNL, INL and conversion error on the right. Inject gain
-  error and residue nonlinearity into a selected stage to connect its transfer distortion with the converter's errors.
+- **Pipeline ADC** at `/adc/pipeline-adc/`. Every stage appears together in the upper plot grid: all residue transfers
+  and the final flash ADC transfer. Four lower plots show the complete ADC's code-centre transfer, DNL, INL and conversion
+  error. Each stage's horizontal axis is its **local input**; markers follow one original input sample through all stages.
+  The overall transfer and conversion-error plots use original input voltage, while DNL and INL use code and transition
+  axes. The 16-LSB zoom applies only to those four overall plots; stage curves retain their local ranges.
+  Inject gain error and residue nonlinearity into a selected stage to connect its distortion with converter errors.
   Choose 12-bit architectures with ten stages
   (nine 1-bit stages plus a final 3-bit flash), four 3-bit stages, or three 4-bit stages; a three-stage 6-bit preset remains
-  available. Later-stage inspection uses the nominal prefix input interval; a shared 16-LSB input magnifier exposes
-  the final staircase and local linearity patterns. Full-range endpoint fitting and reported extrema remain unchanged. The digital output concatenates actual decisions and never adds unquantized analog residue.
+  available. Full-range endpoint fitting and reported extrema remain unchanged by zoom. The digital output concatenates
+  actual decisions and never adds unquantized analog residue.
   Tests cover every 12-bit boundary, full-scale saturation, allocation invariance, true residue branches, analytical
   and independently bisected error-model thresholds, code-density widths, missing codes and observed-endpoint INL.
   This is the only Pipeline ADC page. Production middleware redirects `/adc/pipeline-introduction/` without generating
   a second static page. The course uses `Base viewport`: a 49 px header, flexible lesson area and 26 px visitor footer
-  share `100dvh`, without page scrolling. Narrow screens switch between the curves and linearity plot groups;
-  the visitor counter remains visible.
+  share `100dvh`, without page scrolling. Desktop shows both plot groups together. Narrow or short screens switch between
+  **All stages** and **Overall ADC**; every stage remains visible together in the All stages group. The visitor counter
+  remains visible.
 - **Nonlinear calibration** at `/adc/nonlinear-calibration/`. A known ramp trains a polynomial inverse using QR least
   squares; a new coherent sine and independent noise validate the frozen coefficients. The transfer, error, harmonics,
   SNDR and RMS error share the same data. Degree, coverage, noise, distortion and validation amplitude are adjustable.

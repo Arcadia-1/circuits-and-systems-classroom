@@ -77,18 +77,29 @@ function amplified(r: number, settings: ErrorSettings): number {
   return (1 + settings.gainError / 100) * r + 4 * settings.nonlinearity / 100 * r * (1 - r) * (2 * r - 1);
 }
 
+export interface StageResponse { gain: number; digit: number; dac: number; idealResidue: number; residue: number }
+
+/**
+ * Shared local stage law. Callers validate the topology/settings first. An
+ * explicit branchDigit evaluates the one-sided endpoint of that quantizer
+ * branch; normal conversion omits it and uses the saturating quantizer.
+ */
+export function evaluateStage(input: number, bits: number, settings: ErrorSettings | null = null, branchDigit?: number): StageResponse {
+  const gain = 2 ** bits;
+  const digit = branchDigit ?? Math.max(0, Math.min(gain - 1, Math.floor(gain * input)));
+  const dac = digit / gain;
+  const idealResidue = gain * (input - dac);
+  return { gain, digit, dac, idealResidue, residue: settings ? amplified(idealResidue, settings) : idealResidue };
+}
+
 function run(input: number, prepared: Prepared): ErrorConversion {
   if (!Number.isFinite(input) || input < 0 || input > 1) throw new RangeError('Input must be finite and in [0, 1] V.');
   const { bits, settings, totalBits, levels } = prepared;
   let localInput = input, code = 0, resolvedBits = 0;
   const stages = bits.map((stageBits, index): ErrorStage => {
-    const gain = 2 ** stageBits;
     // Quantizers saturate; the analog residue is deliberately NOT clipped.
-    const digit = Math.max(0, Math.min(gain - 1, Math.floor(gain * localInput)));
-    const dac = digit / gain;
-    const idealResidue = gain * (localInput - dac);
     const injected = index === settings.stage;
-    const residue = injected ? amplified(idealResidue, settings) : idealResidue;
+    const { gain, digit, dac, idealResidue, residue } = evaluateStage(localInput, stageBits, injected ? settings : null);
     code = gain * code + digit;
     resolvedBits += stageBits;
     const prefixLevels = 2 ** resolvedBits;

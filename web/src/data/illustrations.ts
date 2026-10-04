@@ -63,7 +63,7 @@ export const topics: Topic[] = [
       {
         href: '/adc/pipeline-adc/',
         title: 'Pipeline ADC',
-        summary: 'See how stage gain and nonlinearity change residue curves, ADC transfer, DNL and INL.',
+        summary: 'See every stage’s residue or flash transfer, and connect gain and nonlinearity to ADC errors.',
         thumb: 'pipe-intro',
       },
       {
