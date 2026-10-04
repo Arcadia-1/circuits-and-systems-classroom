@@ -234,7 +234,7 @@ export class SerdesScene {
     this.spin = on;
   }
   setPadLoss(lossDb: number): void {
-    this.padLabel.text.textContent = `RX pad · −${lossDb} dB at 28 GHz`;
+    this.padLabel.text.textContent = `RX pad · −${lossDb.toFixed(1)} dB at 28 GHz`;
   }
   flyTo(view: ViewName): void {
     if (view === 'overview') this.fly(this.overviewPose());

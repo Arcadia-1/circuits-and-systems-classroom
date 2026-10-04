@@ -3,19 +3,21 @@ import { readFileSync } from 'node:fs';
 import {
   FN, NF, NFPRE, OS, PRE, Prbs13, adcResponseDb, analyzeLink, berOf, lineResponses, metrics, pulse, responseDb, stage, type LinkSettings,
 } from '../src/illustrations/serdes/model';
+import { CHANNELS } from '../src/illustrations/serdes/channels';
 import { EyeStream, Receiver, SymbolStream, plainPam4Eye } from '../src/illustrations/serdes/streams';
 
 const reference = readFileSync(new URL('../python/expected/serdes_112g_link.txt', import.meta.url), 'utf8').trim().split('\n');
-const rows = reference.slice(1).filter((line) => !line.startsWith('prbs13q') && !line.startsWith('ffe ')).map((line) => line.split(/\s+/).map(Number));
+const rows = reference.slice(1).filter((line) => /^\d/.test(line)).map((line) => line.split(/\s+/).map(Number));
 const linearRows = reference.filter((line) => line.startsWith('ffe ')).map((line) => line.slice(4).split(/\s+/).map(Number));
+const echoRows = reference.filter((line) => line.startsWith('echo-')).map((line) => ({ dfe: line.startsWith('echo-dfe'), row: line.split(/\s+/).slice(1).map(Number) }));
 const settings = (row: number[]): LinkSettings => ({
   lossDb: row[0], xtV: row[1] * 1e-3, rxNoiseV: row[2] * 1e-3, txFfe: row[3] === 1, autoCtle: row[4] === 1, gdc: -12, gdc2: -3, dsp: row[5] === 1,
 });
 const DEFAULT: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -9, gdc2: -3, dsp: true };
 
 describe('112G PAM4 link model', () => {
-  it.each([...rows.map((row) => [row.slice(0, 6).join(' '), row, true] as const), ...linearRows.map((row) => [`FFE ${row.slice(0, 6).join(' ')}`, row, false] as const)])('matches the NumPy reference for %s', (_, row, dfe) => {
-    const a = analyzeLink({ ...settings(row), dfe });
+  it.each([...rows.map((row) => [row.slice(0, 6).join(' '), row, true, false] as const), ...linearRows.map((row) => [`FFE ${row.slice(0, 6).join(' ')}`, row, false, false] as const), ...echoRows.map(({row, dfe}) => [`matched echo DSP=${row[5]} DFE=${dfe}`, row, dfe, true] as const)])('matches the NumPy reference for %s', (_, row, dfe, matchedEcho) => {
+    const a = analyzeLink({ ...settings(row), dfe, echo: matchedEcho ? 0.85 : 0, sharedFrontEnd: matchedEcho });
     const [, , , , , , gdc, gdc2, phase, vga, hm1, h0, h1, padMv, snrDb, log10Ber, b1, w0] = row;
     expect(a.gdc).toBe(gdc);
     expect(a.gdc2).toBe(gdc2);
@@ -48,6 +50,37 @@ describe('112G PAM4 link model', () => {
       expect(Math.max(...pre) - Math.min(...pre)).toBeLessThan(1e-4 * peak);
       expect(Math.abs(pre[0])).toBeLessThan(5e-3 * peak);
     }
+  });
+
+  it('makes the adjustable echo passive and causal with the stated 1-UI delay and Nyquist notch', () => {
+    for (const ratio of [0, 0.5, 0.85, 0.9]) {
+      const echo = stage.postcursorEcho(ratio);
+      expect(responseDb([echo], 0)).toBeCloseTo(0, 12);
+      expect(responseDb([echo], FN)).toBeCloseTo(20 * Math.log10((1 - ratio) / (1 + ratio)), 9);
+      for (let f = 0; f <= 112e9; f += 1e9) expect(responseDb([echo], f)).toBeLessThanOrEqual(1e-10);
+      const direct = pulse([stage.poles(50e9, 2)]), reflected = pulse([stage.poles(50e9, 2), echo]);
+      for (let i = 0; i < direct.length; i++) expect(reflected[i]).toBeCloseTo((direct[i] + ratio * direct[(i - OS + direct.length) % direct.length]) / (1 + ratio), 9);
+    }
+  });
+
+  it('keeps the ADC waveform, noise and clock identical across the matched DSP comparison', () => {
+    const common = { ...DEFAULT, ...CHANNELS[2], sharedFrontEnd: true };
+    const modes = [analyzeLink({...common, dsp: false}), analyzeLink({...common, dfe: false}), analyzeLink({...common, dfe: true})];
+    for (const a of modes.slice(1)) {
+      expect(a.h).toEqual(modes[0].h);
+      expect(a.adc).toEqual(modes[0].adc);
+      expect(a.noise).toEqual(modes[0].noise);
+      expect([a.gdc, a.gdc2, a.vga, a.tsOff]).toEqual([modes[0].gdc, modes[0].gdc2, modes[0].vga, modes[0].tsOff]);
+      expect(a.channelLossDb).toBeCloseTo(-responseDb(a.stages.channel.slice(1), FN), 10);
+    }
+    expect(10 * Math.log10(modes[2].snr / modes[1].snr)).toBeGreaterThan(5);
+  });
+
+  it.each(CHANNELS)('uses the same channel at the end of the 3-D line and in the $id receiver eye', (channel) => {
+    const a = analyzeLink({...DEFAULT, ...channel});
+    const line = lineResponses(channel.lossDb, true, channel.echo);
+    for (let i = 0; i < a.pad.length; i++) expect(line[15][i] * 0.5).toBeCloseTo(a.pad[i], 7);
+    expect(Math.max(...line[0])).toBeGreaterThan(0.65);
   });
 
   it('uses the COM CTLE form: DC gain g_DC + g_DC2 and a high-frequency roll-off', () => {

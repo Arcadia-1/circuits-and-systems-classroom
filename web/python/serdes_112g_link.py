@@ -54,6 +54,13 @@ def echo(eps, delay_ui, seg_loss_db):
     return h
 
 
+def postcursor_echo(ratio, delay_ui=1):
+    def h(f):
+        z = (1 + ratio * np.exp(-2j * np.pi * f * delay_ui * UI)) / (1 + ratio)
+        return np.log(np.abs(z)), np.angle(z)
+    return h
+
+
 def ctle(gdc_db, gdc2_db):
     g, g2 = 10 ** (gdc_db / 20), 10 ** (gdc2_db / 20)
     fz, fp1, fp2, flf = BAUD / 2.5, BAUD / 2.5, BAUD, BAUD / 80
@@ -65,8 +72,8 @@ def ctle(gdc_db, gdc2_db):
     return h
 
 
-def channel(loss_db):
-    return [poles(50e9, 2), skin(0.35 * loss_db), diel(0.65 * loss_db), echo(0.02, 9, 0.12 * loss_db)]
+def channel(loss_db, echo_ratio=0):
+    return [poles(50e9, 2), skin(0.35 * loss_db), diel(0.65 * loss_db), echo(0.02, 9, 0.12 * loss_db), postcursor_echo(echo_ratio)]
 
 
 def rx(gdc_db, gdc2_db):
@@ -140,9 +147,9 @@ def q(x):
     return 0.5 * erfc(x / sqrt(2))
 
 
-def analyze(loss_db, xt_v, rxn_v, tx_ffe, auto, gdc, gdc2, dsp, dfe=True):
+def analyze(loss_db, xt_v, rxn_v, tx_ffe, auto, gdc, gdc2, dsp, dfe=True, echo_ratio=0, shared_front_end=False):
     c = TX_FFE if tx_ffe else (0.0, 1.0, 0.0)
-    ch = channel(loss_db)
+    ch = channel(loss_db, echo_ratio)
     pad = with_tx_ffe(pulse(ch), c) * VPK
     df = BAUD * OS / NFFT
     f = np.arange(NFFT // 2 + 1) * df
@@ -162,10 +169,12 @@ def analyze(loss_db, xt_v, rxn_v, tx_ffe, auto, gdc, gdc2, dsp, dfe=True):
                 h = p[idx] * vga
                 slope = (p[idx + 1] - p[idx - 1]) * vga * OS / 2
                 nz = (th2, xt2, SIG_ADC ** 2, EA * np.sum(slope ** 2) * (RJ / UI) ** 2)
-                w, snr = design(h, nz, dsp, dfe)
+                w, snr = design(h, nz, shared_front_end or dsp, False if shared_front_end else dfe)
                 if best is None or snr > best[0]:
                     best = (snr, w, g, g2, ts, pi, vga, h, nz)
     snr, w, g, g2, ts, pi, vga, h, nz = best
+    if shared_front_end:
+        w, snr = design(h, nz, dsp, dfe)
     f0, b1, snr_check = metrics(h, w, nz, dsp and dfe)
     assert abs(f0 - 1) < 1e-9 and abs(snr_check / snr - 1) < 1e-9
     kept = pad[PS:PS + 56 * OS]
@@ -202,11 +211,17 @@ LINEAR_CASES = [
     (42, 2.1, 0.6, 0, 1, 0, 0, 1),
     (28, 1.5, 0.8, 0, 0, -12, -3, 1),
 ]
-for case, dfe in [(case, True) for case in CASES] + [(case, False) for case in LINEAR_CASES]:
+ECHO_CASES = [
+    ('off', (12, 1.5, 0.8, 1, 1, 0, 0, 0), False),
+    ('ffe', (12, 1.5, 0.8, 1, 1, 0, 0, 1), False),
+    ('dfe', (12, 1.5, 0.8, 1, 1, 0, 0, 1), True),
+]
+reference_cases = [(case, True, 0, False, '') for case in CASES] + [(case, False, 0, False, 'ffe ') for case in LINEAR_CASES]
+reference_cases += [(case, dfe, 0.85, True, f'echo-{mode} ') for mode, case, dfe in ECHO_CASES]
+for case, dfe, echo_ratio, shared_front_end, prefix in reference_cases:
     loss, xt, rxn, txf, auto, gdc, gdc2, dsp = case
-    r = analyze(loss, xt * 1e-3, rxn * 1e-3, txf, auto, gdc, gdc2, dsp, dfe)
+    r = analyze(loss, xt * 1e-3, rxn * 1e-3, txf, auto, gdc, gdc2, dsp, dfe, echo_ratio, shared_front_end)
     h = r['h']
-    prefix = '' if dfe else 'ffe '
     print(f"{prefix}{loss} {xt:.1f} {rxn:.1f} {txf} {auto} {dsp} {r['gdc']} {r['gdc2']} {r['phase']:.5f} {r['vga']:.6f} "
           f"{h[PRE - 1]:.6f} {h[PRE]:.6f} {h[PRE + 1]:.6f} {r['pad_h0'] * 1e3:.4f} {10 * np.log10(r['snr']):.5f} "
           f"{np.log10(max(r['ber'], 1e-300)):.4f} {r['b1']:.6f} {r['w'][NFPRE]:.6f}")

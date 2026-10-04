@@ -75,6 +75,13 @@ export const stage = {
     o[0] = 0.5 * Math.log(re * re + im * im);
     o[1] = Math.atan2(im, re);
   },
+  /** Passive two-path response: (1 + r exp(−jωτ))/(1 + r), unity at DC and a notch at f = 1/(2τ). */
+  postcursorEcho: (ratio: number, delayUi = 1): Stage => (f, o) => {
+    const th = -2 * Math.PI * f * delayUi * UI;
+    const re = 1 + ratio * Math.cos(th), im = ratio * Math.sin(th);
+    o[0] = 0.5 * Math.log(re * re + im * im) - Math.log1p(ratio);
+    o[1] = Math.atan2(im, re);
+  },
   /** IEEE 802.3ck COM reference CTLE: zero at f_b/2.5, poles at f_b/2.5 and f_b, low-frequency shelf at f_b/80. */
   ctle: (gdcDb: number, gdc2Db: number): Stage => {
     const g = 10 ** (gdcDb / 20), g2 = 10 ** (gdc2Db / 20);
@@ -87,9 +94,9 @@ export const stage = {
   },
 };
 
-/** TX driver, then the bump-to-bump channel: skin 35 %, dielectric 65 % of the loss at f_N, plus one echo. */
-export function channelStages(lossDb: number): Stage[] {
-  return [stage.poles(50e9, 2), stage.skin(0.35 * lossDb), stage.diel(0.65 * lossDb), stage.echo(0.02, 9, 0.12 * lossDb)];
+/** TX driver, then the channel: 35 % skin / 65 % dielectric distributed loss, a small echo and an optional 1-UI path. */
+export function channelStages(lossDb: number, echo = 0): Stage[] {
+  return [stage.poles(50e9, 2), stage.skin(0.35 * lossDb), stage.diel(0.65 * lossDb), stage.echo(0.02, 9, 0.12 * lossDb), stage.postcursorEcho(echo)];
 }
 /** RX front end (termination, T-coil and ESD as one pole) and the CTLE. */
 export function rxStages(gdcDb: number, gdc2Db: number): Stage[] {
@@ -254,7 +261,12 @@ export function qfunc(x: number): number {
 export const berOf = (snr: number): number => 0.75 * qfunc(Math.sqrt(snr / 5));
 
 export interface LinkSettings {
+  /** Distributed skin/dielectric loss at Nyquist; an optional echo adds its own frequency-dependent loss. */
   lossDb: number;
+  /** Relative amplitude of a second path delayed by 1 UI, DC-normalized; 0 … 0.9. */
+  echo?: number;
+  /** Calibrate CTLE and clock for FFE once per channel, then reuse that front end in every DSP mode. */
+  sharedFrontEnd?: boolean;
   /** Integrated crosstalk noise and input-referred RX noise at the pad, in volts rms over 0 … f_N. */
   xtV: number;
   rxNoiseV: number;
@@ -271,6 +283,10 @@ export interface LinkSettings {
 export interface LinkAnalysis {
   txFfe: boolean;
   dfe: boolean;
+  echo: number;
+  sharedFrontEnd: boolean;
+  /** Actual bump-to-bump insertion loss at Nyquist, including both echoes and excluding the TX driver. */
+  channelLossDb: number;
   gdc: number;
   gdc2: number;
   /** VGA gain that puts the signal rms at 0.3 of ADC full scale. */
@@ -303,7 +319,8 @@ export interface LinkAnalysis {
 export function analyzeLink(s: LinkSettings): LinkAnalysis {
   const dfe = s.dsp && s.dfe !== false;
   const c = s.txFfe ? TX_FFE : ([0, 1, 0] as const);
-  const channel = channelStages(s.lossDb);
+  const echo = s.echo ?? 0, sharedFrontEnd = s.sharedFrontEnd ?? false;
+  const channel = channelStages(s.lossDb, echo);
   const pad = withTxFfe(pulse(channel), c);
   const gdcs = s.autoCtle ? Array.from({ length: 21 }, (_, i) => 0 - i) : [s.gdc];
   const gdc2s = s.autoCtle ? [0, -3, -6] : [s.gdc2];
@@ -336,11 +353,13 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
         slope += d * d;
       }
       const nz: Noise = { th2, xt2, adc2: SIG_ADC * SIG_ADC, j2: EA * slope * (RJ / UI) ** 2 };
-      const r = design(h, nz, s.dsp, dfe);
+      // A matched comparison chooses the front end using the best FFE, so feedback cannot win by changing the ADC input.
+      const r = design(h, nz, sharedFrontEnd || s.dsp, sharedFrontEnd ? false : dfe);
       if (!best || r.snr > best.snr) best = { snr: r.snr, w: r.w, g, g2, ts, pi, vga, nz, h, p, rx };
     }
   }
   if (!best) throw new Error('no CTLE setting evaluated');
+  const selected = sharedFrontEnd ? design(best.h, best.nz, s.dsp, dfe) : best;
   const adc = new Float32Array(PLEN), padSlice = new Float32Array(PLEN);
   let padH0 = 0, padTs = 0;
   for (let i = 0; i < PLEN; i++) {
@@ -362,6 +381,9 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
   return {
     txFfe: s.txFfe,
     dfe,
+    echo,
+    sharedFrontEnd,
+    channelLossDb: -responseDb(channel.slice(1), FN),
     gdc: best.g,
     gdc2: best.g2,
     vga: best.vga,
@@ -380,8 +402,8 @@ export function analyzeLink(s: LinkSettings): LinkAnalysis {
     // The eye stream and analytical budget use the same small-jitter equivalent noise variance.
     sigAdc: Math.sqrt(th2 + xt2 + adc2 + j2),
     sigSample: Math.sqrt(th2 + xt2 + adc2 + j2 + STX2 * hh),
-    weights: best.w,
-    snr: best.snr,
+    weights: selected.w,
+    snr: selected.snr,
     stages: { channel, rx: best.rx },
   };
 }
@@ -397,11 +419,12 @@ export function adcResponseDb(a: LinkAnalysis, f: number): number {
 }
 
 /** Pulse responses along the line (0 … 1 of its length, 16 steps), without the CTLE, for the travelling waveform. */
-export function lineResponses(lossDb: number, txFfe: boolean): Float32Array[] {
+export function lineResponses(lossDb: number, txFfe: boolean, echo = 0): Float32Array[] {
   const c = txFfe ? TX_FFE : ([0, 1, 0] as const);
   return Array.from({ length: 16 }, (_, j) => {
     const u = j / 15;
-    const q = withTxFfe(pulse([stage.poles(50e9, 2), stage.skin(0.35 * lossDb * u), stage.diel(0.65 * lossDb * u)]), c);
+    // The two propagation paths coincide at launch and separate by one UI at the far end.
+    const q = withTxFfe(pulse([stage.poles(50e9, 2), stage.skin(0.35 * lossDb * u), stage.diel(0.65 * lossDb * u), stage.echo(0.02 * u, 9 * u, 0.12 * lossDb * u), stage.postcursorEcho(echo, u)]), c);
     return Float32Array.from(q.subarray(PS, PS + PLEN));
   });
 }

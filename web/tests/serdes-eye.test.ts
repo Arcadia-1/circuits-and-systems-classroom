@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { EA, LEVELS, NF, NFPRE, OS, analyzeLink, berOf, type LinkSettings } from '../src/illustrations/serdes/model';
 import { EyeStream, MASK, Receiver, SamplingEye } from '../src/illustrations/serdes/streams';
+import { CHANNELS } from '../src/illustrations/serdes/channels';
 
 const BASE: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -9, gdc2: -3, dsp: true };
 const db = (power: number) => 10 * Math.log10(power);
@@ -43,11 +44,14 @@ function audit(settings: LinkSettings) {
 
 describe('same-channel PAM4 eye comparison', () => {
   let normal: ReturnType<typeof audit>, feedback: ReturnType<typeof audit>, bypass: ReturnType<typeof audit>, stress: ReturnType<typeof audit>;
+  let echoFfe: ReturnType<typeof audit>, echoDfe: ReturnType<typeof audit>;
   beforeAll(() => {
     normal = audit({ ...BASE, dfe: false });
     feedback = audit(BASE);
     bypass = audit({ ...BASE, dsp: false });
     stress = audit({ ...BASE, lossDb: 42, xtV: 2.1e-3, rxNoiseV: 0.6e-3, txFfe: false });
+    echoFfe = audit({ ...BASE, ...CHANNELS[2], sharedFrontEnd: true, dfe: false });
+    echoDfe = audit({ ...BASE, ...CHANNELS[2], sharedFrontEnd: true, dfe: true });
   }, 60000);
 
   it('opens all three eyes after equalization of the default closed-eye channel', () => {
@@ -79,6 +83,18 @@ describe('same-channel PAM4 eye comparison', () => {
     for (const margin of stress.margins) expect(margin).toBeLessThan(0);
   });
 
+  it('shows the DFE advantage on the strong-echo channel with the exact same received samples', () => {
+    expect(echoFfe.a.adc).toEqual(echoDfe.a.adc);
+    expect(echoFfe.eyes.padCentre).toEqual(echoDfe.eyes.padCentre);
+    expect(echoFfe.snr).toBeGreaterThan(15.8);
+    expect(echoFfe.snr).toBeLessThan(16.5);
+    expect(echoDfe.snr - echoFfe.snr).toBeGreaterThan(4.8);
+    expect(echoFfe.bitErrors).toBeGreaterThan(10);
+    expect(echoDfe.bitErrors).toBe(0);
+    for (const margin of echoFfe.margins) expect(margin).toBeLessThan(0.05);
+    for (const margin of echoDfe.margins) expect(margin).toBeGreaterThan(0.25);
+  });
+
   it('opens all three eyes at each repeated sampling phase across the displayed 2 UI', () => {
     const eye = normal.eyes.eyes[2];
     for (const x of [2, Math.floor(eye.width / 2), eye.width - 3]) {
@@ -108,7 +124,7 @@ describe('same-channel PAM4 eye comparison', () => {
   });
 
   it('reports observed bits and SNR from the same decision stream', () => {
-    for (const run of [normal, feedback, bypass, stress]) {
+    for (const run of [normal, feedback, bypass, stress, echoFfe, echoDfe]) {
       const measured = run.eyes.measurements();
       expect(measured.bits).toBe(8192);
       expect(Math.abs(db(measured.snr) - run.snr)).toBeLessThan(0.6);
@@ -117,7 +133,7 @@ describe('same-channel PAM4 eye comparison', () => {
   });
 
   it('matches the eye centre, histogram and SNR to the independently recorded decision samples in every mode', () => {
-    for (const run of [normal, feedback, bypass, stress]) {
+    for (const run of [normal, feedback, bypass, stress, echoFfe, echoDfe]) {
       const m = run.eyes.measurements(), { width, height, buf } = m.samplingEye;
       const bins = new Uint16Array(height);
       for (const sample of run.lastSamples) bins[Math.floor((sample / m.histogram.range + 1) * 0.5 * height)]++;

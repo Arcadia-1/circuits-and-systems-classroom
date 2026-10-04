@@ -121,13 +121,16 @@
       <dt>CTLE boost, 28 GHz vs DC</dt><dd class="mono">{nf(a.ctleBoostDb, 1)} dB</dd>
       <dt>VGA gain</dt><dd class="mono">{nf(20 * Math.log10(a.vga), 1)} dB</dd>
       <dt>Sampling phase</dt><dd class="mono">{nf(a.phaseUi, 2)} UI from peak</dd>
+      <dt>Channel loss at 28 GHz</dt><dd class="mono">{nf(a.channelLossDb, 1)} dB</dd>
+      <dt>Echo at +1 UI</dt><dd class="mono">{Math.round(a.echo * 100)}% of direct path</dd>
       <dt>DFE tap b₁</dt><dd class="mono">{a.dfe ? nf(live.b1, 3) : 'off'}</dd>
       <dt>Slow-motion decisions</dt><dd class="mono">{decisions.toLocaleString('en-US')} · {errors} errors</dd>
     </dl>
     <div class="about">
       <span class="label">Model</span>
-      <p><b>Channel.</b> The distributed loss at 28 GHz is split 35% skin effect, exp(−a√(jf/f<sub>N</sub>)), and 65% dielectric, exp(−b(jf/f<sub>N</sub>)<sup>0.9</sup>), with f<sub>N</sub> = 28 GHz. One echo adds a small ripple (ρ₁ρ₂ = 0.02, 9 UI). The TX driver has two poles at 50 GHz, the RX front end one at 45 GHz.</p>
+      <p><b>Channel.</b> The distributed loss at 28 GHz is split 35% skin effect, exp(−a√(jf/f<sub>N</sub>)), and 65% dielectric, exp(−b(jf/f<sub>N</sub>)<sup>0.9</sup>), with f<sub>N</sub> = 28 GHz. One small echo adds ripple (ρ₁ρ₂ = 0.02, 9 UI). The adjustable one-UI echo is a two-path teaching model: H<sub>echo</sub>(f) = (1 + r exp(−j2πf·UI))/(1 + r). It has unity DC gain and adds a Nyquist notch; total channel loss includes it. The TX driver has two poles at 50 GHz, the RX front end one at 45 GHz.</p>
       <p><b>Receiver.</b> The CTLE uses the IEEE 802.3ck COM reference form; Auto searches g<sub>DC</sub> 0 … −20 dB and g<sub>DC2</sub> ∈ {'{'}0, −3, −6{'}'} dB with the sampling phase for the best SNR. A VGA sets the rms to 0.3 FS. The 12-tap MMSE FFE cancels ISI on its own by default. FFE + DFE jointly optimizes it with one feedback tap, leaving the first postcursor for DFE to cancel.</p>
+      <p>With “Same CTLE &amp; clock”, the front end is calibrated for the best FFE and reused across DSP modes. Channel buttons change only distributed loss and echo strength. Noise and TX/RX settings stay at their selected values.</p>
       <p><b>Noise and BER.</b> The model uses RX noise, crosstalk, ADC noise (0.010 FS rms), TX distortion (28 dB SNDR), and a 0.2 ps rms jitter budget. For Gray-coded PAM4, BER ≈ (3/4) Q(√(10<sup>SNR<sub>dB</sub>/10</sup>/5)) assumes Gaussian errors and correct past DFE decisions. The measured readouts use the last 4,096 eye-stream symbols and include DFE error propagation. SNR = signal power / mean squared error against the transmitted levels. No observed errors in this finite window is not proof of zero BER.</p>
       <p><b>Scale.</b> The animation runs about 7×10⁹ times slower than the link and is not to scale: a 30 cm trace holds about 110 symbols, 44 are drawn. <code>python/serdes_112g_link.py</code> is the NumPy reference the tests compare against.</p>
     </div>

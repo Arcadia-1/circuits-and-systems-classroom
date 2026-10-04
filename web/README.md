@@ -58,17 +58,25 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
 - **112G PAM4 SerDes link** at `/serdes/112g-pam4-link/`. A Three.js scene of a chip-to-chip link: the transmitter die
   (MUX tree, SST driver, LC-PLL), the board channel and the receiver die (CTLE, 64-way SAR TI-ADC, FFE/DFE DSP, DEMUX
   tree), with the line voltage drawn in slow motion from the channel model. The model evaluates a causal channel
-  (skin effect, dielectric loss and one echo), the IEEE 802.3ck COM-form CTLE, VGA and noise terms in the frequency
+  (skin effect, dielectric loss and echoes), the IEEE 802.3ck COM-form CTLE, VGA and noise terms in the frequency
   domain, searches the CTLE and sampling phase for the best SNR and solves a 12-tap MMSE FFE with a one-tap DFE; the eye
   diagrams and model error budget follow from it. The default FFE mode optimizes all ISI cursors without decision
-  feedback. Compare shows the RX-pad waveform, the receiver sampling eye and its four-level amplitude distribution.
+  feedback. Four channel-only options cover short (8 dB), lossy (28 dB), a strong 1-UI echo, and long (42 dB) paths;
+  choosing one preserves noise, TX equalization and RX mode. The echo is the passive two-path response
+  `(1 + r exp(-j 2π f UI))/(1 + r)`, with `r = 0.85` and 12 dB distributed loss in the example. Its extra Nyquist loss
+  is included in the total loss, response plot and 3-D RX label. The travelling waveform ends at the same pulse response
+  as the RX-pad eye. By default, “Same CTLE & clock” calibrates the analog front end for the best FFE and uses exactly
+  the same ADC waveform and noise in every DSP mode; unchecking it restores per-mode optimization. A compact comparison
+  reports model SNR assuming correct feedback. The echo case improves from about 16.1 to 21.3 dB with DFE, also checked
+  against actual slicer decisions. Compare shows the RX-pad waveform, the receiver sampling eye and its four-level amplitude distribution.
   The sampling eye sweeps 32 clock phases per UI with fixed equalizer taps; in FFE + DFE mode each phase runs its own
   feedback decisions, including errors. It is a statistical phase-density plot, not an analog DFE waveform. The two-UI
   display repeats the measured one-UI distribution. The histogram is exactly the centre column of the same eye snapshot:
   both use the same amplitude bins and last 4,096 symbols as measured SNR and Gray-coded BER, including DFE error
   propagation. Stages retains the continuous ADC and FFE waveforms. Model SNR and Gaussian BER remain in Channel for
-  comparison. Normal (28 dB) and stress (42 dB) presets use FFE mode. Plain PAM4 remains a TX-only reference. Tests check
-  opening at repeated phases, independent feedback histories, rolling-window expiry and bin-for-bin eye/histogram agreement.
+  comparison. Plain PAM4 remains a TX-only reference. Tests check echo passivity and its delayed pulse, shared front-end
+  equality, numerical agreement with NumPy, measured DFE gain and error propagation, opening at repeated phases,
+  independent feedback histories, rolling-window expiry and bin-for-bin eye/histogram agreement.
   `python/serdes_112g_link.py` is the NumPy
   reference. three.js loads only on this page, as a lazy chunk.
 - **Clock and data recovery** at `/serdes/clock-and-data-recovery/`. A bang-bang CDR for 56 GBd NRZ, opened by a

@@ -5,7 +5,8 @@
   import Segmented from '../../components/ui/Segmented.svelte';
   import { nf } from '../../lib/format';
   import { BLOCKS, CATEGORY, ERROR_COLOR, SYMBOL_COLORS, type BlockId } from './blocks';
-  import { analyzeLink, lineResponses, type LinkAnalysis, type LinkSettings, type Metrics } from './model';
+  import { analyzeLink, design, lineResponses, type LinkAnalysis, type LinkSettings, type Metrics } from './model';
+  import { CHANNELS, type ChannelExample } from './channels';
   import Scope from './Scope.svelte';
   import type { SerdesScene, ViewName } from './scene';
   import { EyeStream, Receiver, SymbolStream } from './streams';
@@ -16,10 +17,11 @@
     { value: 'overview', label: 'Overview' }, { value: 'tx', label: 'TX chip' }, { value: 'channel', label: 'Channel' }, { value: 'rx', label: 'RX chip' }, { value: 'adc', label: 'TI-ADC' },
   ];
   const LEVEL_NAMES = ['−3', '−1', '+1', '+3'];
-  const EXAMPLE: LinkSettings = { lossDb: 28, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -17, gdc2: -3, dsp: true, dfe: false };
-  const settingsKey = (s: LinkSettings) => JSON.stringify([s.lossDb, s.xtV, s.rxNoiseV, s.txFfe, s.dsp, s.dfe, s.autoCtle, s.autoCtle ? 0 : s.gdc, s.autoCtle ? 0 : s.gdc2]);
+  const EXAMPLE: LinkSettings = { lossDb: 28, echo: 0, sharedFrontEnd: true, xtV: 1.5e-3, rxNoiseV: 0.8e-3, txFfe: true, autoCtle: true, gdc: -17, gdc2: -3, dsp: true, dfe: false };
+  const settingsKey = (s: LinkSettings) => JSON.stringify([s.lossDb, s.echo, s.sharedFrontEnd, s.xtV, s.rxNoiseV, s.txFfe, s.dsp, s.dfe, s.autoCtle, s.autoCtle ? 0 : s.gdc, s.autoCtle ? 0 : s.gdc2]);
 
   let lossDb = $state(28), xtMv = $state(1.5), rxnMv = $state(0.8), txFfe = $state(true);
+  let echo = $state(0), sharedFrontEnd = $state(true);
   let equalizer = $state<'off' | 'ffe' | 'dfe'>('ffe');
   const dsp = $derived(equalizer !== 'off');
   const dfe = $derived(equalizer === 'dfe');
@@ -39,13 +41,17 @@
   let measured = $state.raw(eyes.measurements());
   let live = $state.raw<Metrics>(rx.live);
   let adapting = $state(false), decisions = $state(0), errors = $state(0);
-  let line = lineResponses(28, true), lineKey = '28|true';
+  let line = lineResponses(28, true), lineKey = '28|true|0';
   let scene: SerdesScene | null = null;
+  const eqComparison = $derived.by(() => ({
+    ffe: 10 * Math.log10(design(a.h, a.noise, true, false).snr),
+    dfe: 10 * Math.log10(design(a.h, a.noise, true, true).snr),
+  }));
 
   // Re-solve the link shortly after the settings stop moving; the running taps then adapt toward the new optimum.
   $effect(() => {
     const auto = ctle === 'auto';
-    const s: LinkSettings = { lossDb, xtV: xtMv * 1e-3, rxNoiseV: rxnMv * 1e-3, txFfe, dsp, dfe, autoCtle: auto, gdc: auto ? 0 : gdc, gdc2: auto ? 0 : gdc2 };
+    const s: LinkSettings = { lossDb, echo, sharedFrontEnd, xtV: xtMv * 1e-3, rxNoiseV: rxnMv * 1e-3, txFfe, dsp, dfe, autoCtle: auto, gdc: auto ? 0 : gdc, gdc2: auto ? 0 : gdc2 };
     const timer = setTimeout(() => {
       const next = settingsKey(s);
       if (next === appliedSettings) return;
@@ -56,12 +62,12 @@
         gdc = a.gdc;
         gdc2 = a.gdc2;
       }
-      const key = `${s.lossDb}|${s.txFfe}`;
+      const key = `${s.lossDb}|${s.txFfe}|${s.echo}`;
       if (key !== lineKey) {
         lineKey = key;
-        line = lineResponses(s.lossDb, s.txFfe);
+        line = lineResponses(s.lossDb, s.txFfe, s.echo);
       }
-      scene?.setPadLoss(s.lossDb);
+      scene?.setPadLoss(a.channelLossDb);
     }, 90);
     return () => clearTimeout(timer);
   });
@@ -106,7 +112,7 @@
       scene.setTheme(light);
       scene.setLabels(labels);
       scene.setSpin(spin);
-      scene.setPadLoss(lossDb);
+      scene.setPadLoss(a.channelLossDb);
     });
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
@@ -150,23 +156,19 @@
     view = v;
     scene?.flyTo(v);
   };
-  const example = $derived(ctle === 'auto' && equalizer === 'ffe' ? lossDb === 28 && xtMv === 1.5 && rxnMv === 0.8 && txFfe ? 'normal' : lossDb === 42 && xtMv === 2.1 && rxnMv === 0.6 && !txFfe ? 'stress' : null : null);
-  function chooseExample(stress: boolean): void {
-    lossDb = stress ? 42 : 28;
-    xtMv = stress ? 2.1 : 1.5;
-    rxnMv = stress ? 0.6 : 0.8;
-    txFfe = !stress;
-    ctle = 'auto';
-    equalizer = 'ffe';
+  const example = $derived(CHANNELS.find((c) => c.lossDb === lossDb && Math.abs(c.echo - echo) < 1e-9));
+  function chooseChannel(channel: ChannelExample): void {
+    lossDb = channel.lossDb;
+    echo = channel.echo;
   }
   const slowMs = $derived(1000 / (UIPS * speed));
   const facts = $derived.by((): [string, string][] => {
     switch (picked) {
-      case 'ctle': return [['g_DC / g_DC2', `${nf(a.gdc, 0)} / ${nf(a.gdc2, 0)} dB`], ['Boost, 28 GHz vs DC', `${nf(a.ctleBoostDb, 1)} dB`], ['Setting', ctle === 'auto' ? 'auto, best SNR' : 'manual']];
+      case 'ctle': return [['g_DC / g_DC2', `${nf(a.gdc, 0)} / ${nf(a.gdc2, 0)} dB`], ['Boost, 28 GHz vs DC', `${nf(a.ctleBoostDb, 1)} dB`], ['Setting', ctle === 'auto' ? a.sharedFrontEnd ? 'auto, FFE calibration' : 'auto, best SNR' : 'manual']];
       case 'vga': return [['Gain', `${nf(20 * Math.log10(a.vga), 1)} dB`]];
       case 'dsp': return [['Model SNR at slicer', `${nf(10 * Math.log10(live.snr), 1)} dB`], ['DFE b₁', a.dfe ? nf(live.b1, 3) : 'off']];
       case 'cdr': return [['Sampling phase', `${nf(a.phaseUi, 2)} UI from the pulse peak`]];
-      case 'chan': return [['Loss at 28 GHz', `${lossDb} dB bump to bump`], ['Velocity', '≈ 0.5 c, 2.7 mm per UI']];
+      case 'chan': return [['Loss at 28 GHz', `${nf(a.channelLossDb, 1)} dB bump to bump`], ['Delayed path', `${Math.round(a.echo * 100)}% at +1 UI`], ['Velocity', '≈ 0.5 c, 2.7 mm per UI']];
       case 'txdsp': return [['Taps', txFfe ? '−0.10 / 0.75 / −0.15' : '0 / 1 / 0 (off)']];
       case 'deser': return [['Decisions', decisions.toLocaleString('en-US')], ['Errors seen', String(errors)]];
       default: return [];
@@ -180,16 +182,20 @@
   <section class="work">
     <aside class="side" aria-label="Link settings">
       <section>
-        <h2 class="label">Examples</h2>
-        <div class="row start" role="group" aria-label="Link examples">
-          <button type="button" aria-pressed={example === 'normal'} onclick={() => chooseExample(false)}>28 dB · normal</button>
-          <button type="button" aria-pressed={example === 'stress'} onclick={() => chooseExample(true)}>42 dB · stress</button>
+        <h2 class="label">Channel</h2>
+        <div class="channel-options" role="group" aria-label="Channel examples">
+          {#each CHANNELS as channel (channel.id)}
+            <button type="button" aria-pressed={example?.id === channel.id} onclick={() => chooseChannel(channel)}><span>{channel.name}</span><small>{channel.detail}</small></button>
+          {/each}
         </div>
+        {#if example}<p class="hint">{example.note}</p>{/if}
       </section>
       <section>
-        <h2 class="label">Channel</h2>
-        <Range id="serdes-loss" bind:value={lossDb} min={8} max={44} step={1} output={`${lossDb} dB`}>Loss at 28 GHz</Range>
-        <div class="ticks" aria-hidden="true"><span style:left="22.2%">VSR</span><span style:left="33.3%">MR</span><span style:left="55.6%">LR</span></div>
+        <h2 class="label">Channel settings</h2>
+        <Range id="serdes-loss" bind:value={lossDb} min={8} max={44} step={1} output={`${lossDb} dB`}>Distributed loss at 28 GHz</Range>
+        {#if !echo}<div class="ticks" aria-hidden="true"><span style:left="22.2%">VSR</span><span style:left="33.3%">MR</span><span style:left="55.6%">LR</span></div>{/if}
+        <Range id="serdes-echo" bind:value={echo} min={0} max={0.9} step={0.05} output={`${Math.round(echo * 100)}%`}>Echo amplitude · +1 UI</Range>
+        <p class="hint">Total channel loss at 28 GHz: {nf(a.channelLossDb, 1)} dB</p>
         <Range id="serdes-xt" bind:value={xtMv} min={0} max={4} step={0.1} output={`${xtMv.toFixed(1)} mV`}>Crosstalk (ICN)</Range>
       </section>
       <section>
@@ -202,6 +208,14 @@
         <div class="row"><span>CTLE</span><Segmented size="sm" label="CTLE setting" options={[{ value: 'auto', label: 'Auto' }, { value: 'manual', label: 'Manual' }]} bind:value={ctle} /></div>
         {#if ctle === 'manual'}<Range id="serdes-gdc" bind:value={gdc} min={-20} max={0} step={1} output={`${nf(gdc, 0)} dB`}><var>g</var><sub>DC</sub></Range>{/if}
         <div class="row"><span>DSP</span><Segmented size="sm" label="Receiver DSP equalizer" options={[{ value: 'off', label: 'Off' }, { value: 'ffe', label: 'FFE' }, { value: 'dfe', label: 'FFE + DFE' }]} bind:value={equalizer} /></div>
+        <label class="match-front-end"><input type="checkbox" bind:checked={sharedFrontEnd} /> Same CTLE &amp; clock across DSP modes</label>
+        {#if a.sharedFrontEnd}
+          <div class="eq-comparison" aria-label="Model SNR comparison at the same front end">
+            <span>FFE <b class="mono">{nf(eqComparison.ffe, 1)} dB</b></span>
+            <span>FFE + DFE <b class="mono">{nf(eqComparison.dfe, 1)} dB</b></span>
+            <small>Model · correct feedback <b class="mono">+{nf(eqComparison.dfe - eqComparison.ffe, 1)} dB</b></small>
+          </div>
+        {/if}
         <p class="hint">{ctle === 'auto' ? `auto: g_DC ${nf(a.gdc, 0)} dB, g_DC2 ${nf(a.gdc2, 0)} dB` : 'manual g_DC, g_DC2 kept'} · {dsp ? dfe ? '12-tap FFE + 1-tap DFE' : '12-tap FFE' : 'DSP bypassed'}</p>
         <Range id="serdes-rxn" bind:value={rxnMv} min={0.2} max={2.5} step={0.1} output={`${rxnMv.toFixed(1)} mV`}>RX input noise</Range>
       </section>
@@ -266,7 +280,7 @@
   .side section:first-child { border-top: 0; padding-top: 2px; }
   .side h2 { margin: 0; }
   .side section :global(.range) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label out' 'input input'; align-items: center; gap: 5px 8px; }
-  .side section :global(.range label) { grid-area: label; }
+  .side section :global(.range label) { grid-area: label; white-space: normal; line-height: 1.4; }
   .side section :global(.range input) { grid-area: input; width: 100%; }
   .side section :global(.range output) { grid-area: out; width: auto; text-align: right; }
   .ticks { position: relative; height: 11px; margin-top: -5px; font: 10px var(--mono); color: var(--ink-3); }
@@ -290,6 +304,15 @@
   .views { position: absolute; z-index: 2; top: 10px; left: 10px; display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 8px; background: color-mix(in srgb, var(--plot) 86%, transparent); box-shadow: inset 0 0 0 1px var(--rule); }
   button { font: 500 12.5px/1 var(--sans); color: var(--ink-2); background: var(--plot); border: 0; border-radius: 6px; padding: 7px 10px; cursor: pointer; white-space: nowrap; box-shadow: inset 0 0 0 1px var(--rule); }
   button:hover { color: var(--ink); }
+  .channel-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .channel-options button { display: grid; gap: 6px; text-align: left; padding: 10px; }
+  .channel-options small { font-size: 11px; font-weight: 400; color: var(--ink-3); }
+  .match-front-end { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); }
+  .match-front-end input { accent-color: var(--brand); margin: 0; }
+  .eq-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 9px; background: var(--plot); border-radius: 6px; font-size: 11px; color: var(--ink-2); }
+  .eq-comparison span { display: grid; gap: 4px; }
+  .eq-comparison b { color: var(--ink); font-weight: 500; }
+  .eq-comparison small { display: flex; justify-content: space-between; gap: 6px; grid-column: 1 / -1; font-size: 10px; border-top: 1px solid var(--rule); padding-top: 6px; }
   .views button { box-shadow: none; background: transparent; }
   button[aria-pressed='true'] { color: var(--ink); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
   button.primary { color: var(--ground); background: var(--brand); box-shadow: none; min-width: 58px; }
