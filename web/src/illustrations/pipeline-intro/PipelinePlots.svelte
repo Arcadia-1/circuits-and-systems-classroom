@@ -82,7 +82,7 @@
     <div class="overall-grid">
       <CurvePanel title="Transfer function" detail="Nominal code centres" color="#ad6b09" xDomain={domain} yDomain={geometry.transferDomain} xLabel="Original input · V" yLabel="Output · V" series={geometry.transfer} marker={{x:conversion.input,y:conversion.estimate}} vertical={conversion.input}/>
       <CurvePanel title="DNL" detail={linearity.dnlDetail} color="#147a9c" xDomain={codeDomain} yDomain={linearity.dnlDomain} xLabel="Output code" yLabel="DNL · nominal LSB" series={linearity.dnl} marker={{x:conversion.code+.5,y:analysis.nominalDnl[conversion.code]}} vertical={conversion.code+.5}/>
-      <CurvePanel title="INL · endpoint fit" detail={linearity.inlDetail} color="#b64e69" xDomain={codeDomain} yDomain={linearity.inlDomain} xLabel="Transition code" yLabel="INL · fitted LSB" series={linearity.inl} marker={inlMarker} vertical={conversion.code}/>
+      <CurvePanel title="INL · endpoint fit" detail={linearity.inlDetail} color="#b64e69" xDomain={codeDomain} yDomain={linearity.inlDomain} xLabel="Transition code" yLabel="INL · fitted LSB" series={linearity.inl} marker={inlMarker} vertical={inlCode}/>
       <CurvePanel title="Conversion error" detail={linearity.errorDetail} color="#5367b6" xDomain={errorDomain} yDomain={linearity.errorDomain} xLabel="Original input · V" yLabel="Error · LSB" series={linearity.error} marker={{x:conversion.input,y:conversion.error*analysis.levels}} vertical={conversion.input}/>
     </div>
   </section>
