@@ -16,7 +16,7 @@
   };
 </script>
 
-<Plot label="Distribution of actual DFE decision samples; amplitude on the horizontal axis, sample count on the vertical axis">
+<Plot label="Distribution of actual receiver decision samples; amplitude on the horizontal axis, sample count on the vertical axis">
   {#snippet children({ width: w, height: h })}
     <text class="tx2" x="12" y="14">sample count</text>
     <text class="tx" text-anchor="end" x={w - 12} y="14">peak {peak}</text>

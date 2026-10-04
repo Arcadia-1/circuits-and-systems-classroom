@@ -61,9 +61,10 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   (skin effect, dielectric loss and one echo), the IEEE 802.3ck COM-form CTLE, VGA and noise terms in the frequency
   domain, searches the CTLE and sampling phase for the best SNR and solves a 12-tap MMSE FFE with a one-tap DFE; the eye
   diagrams and model error budget follow from it. The default FFE mode optimizes all ISI cursors without decision
-  feedback. Compare overlays continuous 2-UI windows before RX equalization and after CTLE + FFE, so all phases of
-  the eye come from the actual linear waveform. Optional FFE + DFE mode jointly designs the two equalizers and shows
-  the post-DFE decision-sample distribution; a symbol-rate feedback correction does not define a continuous waveform
+  feedback. Compare always shows continuous 2-UI eyes before RX equalization and after CTLE + FFE alongside the
+  four-level decision-sample distribution. All phases of the eye come from the actual linear waveform. Optional
+  FFE + DFE mode jointly designs the two equalizers: the eye remains at the FFE output and the distribution measures
+  the post-DFE samples. A symbol-rate feedback correction does not define a continuous waveform
   between decisions. Measured SNR and observed Gray-coded BER use the last 4,096 symbols, including DFE error
   propagation when enabled. The model SNR and Gaussian BER estimate remain in Channel for comparison. Stages exposes
   the intermediate ADC and FFE waveforms. Normal (28 dB) and stress (42 dB) presets use FFE mode. A Plain PAM4 view

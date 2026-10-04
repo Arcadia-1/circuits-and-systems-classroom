@@ -45,7 +45,7 @@
     }
     if (tab === 'compare') {
       if (canvases[0]) drawEye(canvases[0], eyes.eyes[0], { light, range: a.padRange, amplitude: null, corner: `±${Math.round(a.padRange * 1000)} mV` });
-      if (!a.dfe && canvases[1]) drawEye(canvases[1], eyes.eyes[2], { light, range: 1.6, amplitude: 1, corner: 'levels ±1, ±⅓' });
+      if (canvases[1]) drawEye(canvases[1], eyes.eyes[2], { light, range: 1.6, amplitude: 1, corner: 'levels ±1, ±⅓' });
       return;
     }
     const styles = [
@@ -80,14 +80,9 @@
   <Segmented size="sm" label="Scope view" options={[{ value: 'compare', label: 'Compare' }, { value: 'eyes', label: 'Stages' }, { value: 'plain', label: 'Plain PAM4' }, { value: 'channel', label: 'Channel' }]} bind:value={tab} />
   {#if tab === 'compare'}
     <figure class="eye comparison-eye"><figcaption><span class="label">Before RX EQ</span><span class="mono val">SNR {measured.bits ? nf(padSnrDb, 1) : '—'} dB</span></figcaption><canvas bind:this={canvases[0]} use:sized aria-label="PAM4 eye before receiver equalization, at the RX pad"></canvas></figure>
-    {#if a.dfe}
-      <figure class="eye"><figcaption><span class="label">After DFE · samples</span><span class="mono val">SNR {measured.bits ? nf(snrDb, 1) : '—'} dB</span></figcaption><div class="decision-chart"><DecisionChart histogram={measured.histogram} /></div></figure>
-      <p class="response-note">DFE corrects the decision samples. Four separated peaks show recovery of the PAM4 levels; dashed lines are slicer thresholds.</p>
-      <p class="response-note">Stages shows the continuous waveforms before DFE.</p>
-    {:else}
-      <figure class="eye comparison-eye"><figcaption><span class="label">{dsp ? 'After CTLE + FFE' : 'DSP bypassed'}</span><span class="mono val">SNR {measured.bits ? nf(snrDb, 1) : '—'} dB</span></figcaption><canvas bind:this={canvases[1]} use:sized aria-label="Continuous PAM4 eye after receiver equalization"></canvas></figure>
-      <p class="response-note">Same data and channel. Continuous waveforms overlaid in 2-UI windows. Centre line = sampling instant.</p>
-    {/if}
+    <figure class="eye comparison-eye"><figcaption><span class="label">{dsp ? 'After CTLE + FFE' : 'DSP bypassed'}</span><span class="mono val">{#if a.dfe}before DFE{:else}SNR {measured.bits ? nf(snrDb, 1) : '—'} dB{/if}</span></figcaption><canvas bind:this={canvases[1]} use:sized aria-label="Continuous PAM4 eye after CTLE and FFE, before any DFE feedback"></canvas></figure>
+    <figure class="eye"><figcaption><span class="label">{a.dfe ? 'After DFE · samples' : 'Four-level samples'}</span><span class="mono val">{(measured.bits / 2).toLocaleString('en-US')} samples</span></figcaption><div class="decision-chart"><DecisionChart histogram={measured.histogram} /></div></figure>
+    <p class="response-note">Same data and channel. Eyes: continuous 2-UI windows. Distribution: {a.dfe ? 'after DFE, at the decision instant' : 'at the eye centre'}. Dashed lines = slicer thresholds.</p>
   {:else if tab === 'eyes'}
     <figure class="eye"><figcaption><span class="label">RX pad</span>after the channel<span class="mono val">h₀ {Math.round(a.padH0 * 1000)} mV</span></figcaption><canvas bind:this={canvases[0]} use:sized></canvas></figure>
     <figure class="eye"><figcaption><span class="label">ADC input</span>after CTLE + VGA<span class="mono val">h₀ {a.h[PRE].toFixed(2)} FS</span></figcaption><canvas bind:this={canvases[1]} use:sized></canvas></figure>
@@ -160,8 +155,8 @@
   figcaption .val { margin-left: auto; font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
   canvas { display: block; width: 100%; height: 104px; border-radius: 6px; background: var(--plot); box-shadow: inset 0 0 0 1px var(--rule); }
   .plain-eye canvas { height: 240px; }
-  .comparison-eye canvas { height: 164px; }
-  .decision-chart { display: flex; height: 164px; border-radius: 6px; background: var(--plot); box-shadow: inset 0 0 0 1px var(--rule); }
+  .comparison-eye canvas { height: 148px; }
+  .decision-chart { display: flex; height: 124px; border-radius: 6px; background: var(--plot); box-shadow: inset 0 0 0 1px var(--rule); }
   .chart { display: flex; flex-direction: column; gap: 2px; height: 170px; }
   .cap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; font-size: 12px; color: var(--ink-2); }
   .cap i { width: 10px; height: 2px; margin: 0 5px 3px 8px; vertical-align: middle; }
