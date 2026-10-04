@@ -44,23 +44,31 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   bounded VCO tuning and feedback divider. Compare open loop, P-only phase offset, type-II locking, damping and a
   reference phase step. The clock sketch and chart cursor share frequency/phase state. Independent fine-step NumPy
   integration and analytical equilibrium checks validate the model; this is not a nonlinear PFD acquisition model.
-- **Pipeline ADC** at `/adc/pipeline-adc/`. Every stage appears together in the upper plot grid: all residue transfers
-  and the final flash ADC transfer. Four lower plots show the complete ADC's code-centre transfer, DNL, INL and conversion
-  error. Each stage's horizontal axis is its **local input**; markers follow one original input sample through all stages.
-  The overall transfer and conversion-error plots use original input voltage, while DNL and INL use code and transition
-  axes. The 16-LSB zoom applies only to those four overall plots; stage curves retain their local ranges.
-  Inject gain error and residue nonlinearity into a selected stage to connect its distortion with converter errors.
-  Choose 12-bit architectures with ten stages
-  (nine 1-bit stages plus a final 3-bit flash), four 3-bit stages, or three 4-bit stages; a three-stage 6-bit preset remains
-  available. Full-range endpoint fitting and reported extrema remain unchanged by zoom. The digital output concatenates
-  actual decisions and never adds unquantized analog residue.
+- **Pipeline ADC** at `/adc/pipeline-adc/`. All stages appear as rows in one SVG strip. Each row plots against
+  **original ADC input voltage**, with
+  its own explicitly labeled bounds: the true input interval selected by the preceding stage decisions is expanded for
+  the next row. A highlighted interval and connecting band show which part of one row becomes the following view.
+  Linked markers follow the same input sample through every stage. Display magnification describes the horizontal view
+  scale; the residue amplifier's circuit gain is specified separately. Residue rows show amplifier output voltage, and
+  the final row shows the last flash digit.
+  Large DNL and INL plots occupy the right side, with smaller overall ADC transfer and conversion-error plots below them.
+  All four overall plots retain their full input or code range. Inject gain error and residue nonlinearity into a selected
+  stage to connect the changed residue with its complete static error pattern. All sliders sit above the plots.
+  Both error controls span ±0.25% in 0.005% increments, with +0.10% default gain error. **Reset errors** clears both
+  errors without moving the input. **Random input**, **Random errors**, and **Random all** independently randomize
+  the input voltage, both selected-stage errors, or all three values; these actions pause the sweep and retain the
+  architecture and error stage.
+  The default architecture is four 3-bit stages, totaling 12 bits. Alternatives include ten stages (nine 1-bit stages
+  plus a final 3-bit flash), three 4-bit stages, and a three-stage 6-bit preset. Endpoint fitting and reported extrema
+  always use the full input range.
+  The digital output concatenates actual decisions and never adds unquantized analog residue.
   Tests cover every 12-bit boundary, full-scale saturation, allocation invariance, true residue branches, analytical
   and independently bisected error-model thresholds, code-density widths, missing codes and observed-endpoint INL.
   This is the only Pipeline ADC page. Production middleware redirects `/adc/pipeline-introduction/` without generating
   a second static page. The course uses `Base viewport`: a 49 px header, flexible lesson area and 26 px visitor footer
-  share `100dvh`, without page scrolling. Desktop shows both plot groups together. Narrow or short screens switch between
-  **All stages** and **Overall ADC**; every stage remains visible together in the All stages group. The visitor counter
-  remains visible.
+  share `100dvh`, without page scrolling. Desktop shows every stage alongside the error plots. At widths of 850 px or
+  less, **Stage curves** and **DNL / INL** tabs switch plot groups; the Stage curves strip still includes every stage.
+  The visitor counter remains visible.
 - **Nonlinear calibration** at `/adc/nonlinear-calibration/`. A known ramp trains a polynomial inverse using QR least
   squares; a new coherent sine and independent noise validate the frozen coefficients. The transfer, error, harmonics,
   SNDR and RMS error share the same data. Degree, coverage, noise, distortion and validation amplitude are adjustable.

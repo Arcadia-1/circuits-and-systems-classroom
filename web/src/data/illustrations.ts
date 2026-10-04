@@ -63,7 +63,7 @@ export const topics: Topic[] = [
       {
         href: '/adc/pipeline-adc/',
         title: 'Pipeline ADC',
-        summary: 'See every stage’s residue or flash transfer, and connect gain and nonlinearity to ADC errors.',
+        summary: 'Follow the input interval from stage to stage, and connect residue distortion to DNL and INL.',
         thumb: 'pipe-intro',
       },
       {
