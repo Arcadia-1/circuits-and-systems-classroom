@@ -44,11 +44,11 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   bounded VCO tuning and feedback divider. Compare open loop, P-only phase offset, type-II locking, damping and a
   reference phase step. The clock sketch and chart cursor share frequency/phase state. Independent fine-step NumPy
   integration and analytical equilibrium checks validate the model; this is not a nonlinear PFD acquisition model.
-- **Pipeline ADC introduction** at `/adc/pipeline-introduction/`. A three-stage radix-4 pipeline: two coarse ADC/DAC/
-  residue stages and a final flash produce six actual digital bits. The output uses code centres, without adding back
-  the analog residue. A clock-step schedule follows samples through three stage operations and aligns their digits,
-  separating three clocks from launch to output from one-sample-per-clock throughput. The existing 1.5-bit lesson
-  remains available as the next course. Tests compare every code boundary to a direct 6-bit quantizer.
+- **Pipeline ADC** at `/adc/pipeline-adc/`. Linked transfer and residue curves show a three-stage radix-4 pipeline:
+  two coarse ADC/DAC/residue stages and a final flash produce six actual digital bits. The output uses code centres,
+  without adding back the analog residue. Tests compare every code boundary to a direct 6-bit quantizer. This is the
+  single Pipeline ADC lesson; `/adc/pipeline-introduction/` redirects here. The former 1.5-bit implementation has been
+  removed because its output reconstruction used unquantized analog residue as if it were a digital correction.
 - **Nonlinear calibration** at `/adc/nonlinear-calibration/`. A known ramp trains a polynomial inverse using QR least
   squares; a new coherent sine and independent noise validate the frozen coefficients. The transfer, error, harmonics,
   SNDR and RMS error share the same data. Degree, coverage, noise, distortion and validation amplitude are adjustable.

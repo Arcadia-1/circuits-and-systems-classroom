@@ -7,7 +7,6 @@
  */
 export const publicLessonPaths = [
   '/pll/introduction/',
-  '/adc/pipeline-introduction/',
   '/adc/nonlinear-calibration/',
   '/adc/aliasing-and-nyquist-zones/',
   '/adc/binary-vs-redundant-sar/',

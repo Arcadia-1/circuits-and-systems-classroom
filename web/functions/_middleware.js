@@ -26,6 +26,11 @@ function isManualPath(pathname) {
 export async function onRequest(context) {
   const url = new URL(context.request.url);
 
+  if (url.pathname === '/adc/pipeline-introduction' || url.pathname === '/adc/pipeline-introduction/') {
+    const destination = new URL('/adc/pipeline-adc/' + url.search, url.hostname === OLD_HOST ? NEW_ORIGIN : url.origin);
+    return Response.redirect(destination, 301);
+  }
+
   if (RETIRED_PATHS.has(url.pathname)) {
     return new Response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="robots" content="noindex"><title>Lesson retired</title><body><h1>Lesson retired</h1><p>This lesson has been removed from Circuits &amp; Systems Classroom.</p><p><a href="/">Return to the classroom</a></p></body></html>', {
       status: 410,

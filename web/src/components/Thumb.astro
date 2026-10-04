@@ -1,6 +1,6 @@
 ---
 /** Small schematic previews for the home page. */
-interface Props { kind: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
+interface Props { kind: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
 const { kind } = Astro.props;
 const xs = Array.from({ length: 13 }, (_, i) => 6 + i * 14);
 const saw = [-14, -8, -2, 6, 14];
@@ -98,8 +98,12 @@ const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 1
     </g>
   ) : kind === 'pipe-intro' ? (
     <g fill="none" stroke-width="2">
-      {[0,1,2].map(i=><g><rect x={12+i*61} y="17" width="44" height="32" rx="4" stroke="var(--brand)"/><path d={`M${19+i*61} 40l9-16v16l9-16v16l9-16`} stroke="var(--s1)"/><path d={`M${14+i*61} 67h38M${14+i*61} 83h38`} stroke="var(--rule)"/><rect x={18+i*61} y={60+i*5} width="14" height="12" rx="2" fill="var(--s2)" stroke="none"/></g>)}
-      <path d="M57 33h14m47 0h14" stroke="var(--ink-3)"/>
+      <path d="M12 7v38h168M12 57v36h168" stroke="var(--rule)"/>
+      <path d="M12 42h42m0-9h42m0-9h42m0-9h42" stroke="var(--s1)"/>
+      <path d="M12 91l42-32m0 32l42-32m0 32l42-32m0 32l42-32" stroke="var(--s2)"/>
+      <path d="M120 7v86" stroke="var(--ink-3)" stroke-dasharray="3 3" stroke-width="1"/>
+      <circle cx="120" cy="24" r="3" fill="var(--s1)" stroke="var(--plot)"/>
+      <circle cx="120" cy="72.7" r="3" fill="var(--s2)" stroke="var(--plot)"/>
     </g>
   ) : kind === 'calibration' ? (
     <g fill="none" stroke-width="2">
@@ -158,17 +162,6 @@ const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 1
       {xs.map((x, i) => <g class="s1"><line x1={x} y1="30" x2={x} y2={30 + ((i % 3) - 1)} /><circle cx={x} cy={30 + ((i % 3) - 1)} r="2.2" /></g>)}
       <line class="base" x1="0" y1="78" x2="188" y2="78" />
       {xs.map((x, i) => <g class="s2"><line x1={x} y1="78" x2={x} y2={78 + saw[i % 5]} /><circle cx={x} cy={78 + saw[i % 5]} r="2.2" /></g>)}
-    </>
-  ) : kind === 'pipeline' ? (
-    <>
-      <line class="base" x1="0" y1="51" x2="188" y2="51" />
-      {[8, 48, 88, 128].map((x, i) => <g>
-        <rect class="mini" x={x} y="28" width="28" height="45" rx="4" />
-        <line class="s1" x1={x + 6} y1="51" x2={x + 20} y2={i % 2 ? 38 : 64} />
-        <circle class="mark" cx={x + 20} cy={i % 2 ? 38 : 64} r="2.5" />
-        {i < 3 && <line class="s2" x1={x + 28} y1="51" x2={x + 40} y2="51" />}
-      </g>)}
-      <polyline class="s2 link" points="8,86 32,70 56,82 80,62 104,72 128,48 152,58 180,34" />
     </>
   ) : kind === 'win' ? (
     <>

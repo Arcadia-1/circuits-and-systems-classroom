@@ -102,7 +102,11 @@ describe('nonlinear calibration', () => {
   });
 });
 
-it('publishes all three new courses with separate routes', async () => {
+it('publishes PLL, calibration and one canonical Pipeline ADC course', async () => {
   const { featuredLessons } = await import('../src/data/illustrations');
-  for (const href of ['/pll/introduction/', '/adc/pipeline-introduction/', '/adc/nonlinear-calibration/']) expect(featuredLessons.some(x => x.href === href)).toBe(true);
+  const { isPublicLessonPath } = await import('../src/data/publication');
+  for (const href of ['/pll/introduction/', '/adc/pipeline-adc/', '/adc/nonlinear-calibration/']) expect(featuredLessons.some(x => x.href === href)).toBe(true);
+  expect(featuredLessons.filter(x => x.href.includes('/pipeline-'))).toHaveLength(1);
+  expect(isPublicLessonPath('/adc/pipeline-adc/')).toBe(true);
+  expect(isPublicLessonPath('/adc/pipeline-introduction/')).toBe(false);
 });

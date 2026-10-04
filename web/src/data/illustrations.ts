@@ -4,7 +4,7 @@ export interface Illustration {
   href: string;
   title: string;
   summary: string;
-  thumb: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'pipeline' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
+  thumb: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
   /** Whose site this is, for a page that is not on this one; it opens in a tab of its own. */
   external?: string;
   /** Public catalog label; assigned only after a lesson passes the editorial gate. */
@@ -61,9 +61,9 @@ export const topics: Topic[] = [
         thumb: 'sar',
       },
       {
-        href: '/adc/pipeline-introduction/',
-        title: 'Pipeline ADC introduction',
-        summary: 'Resolve coarse bits, amplify the residue, and watch samples move through the pipeline.',
+        href: '/adc/pipeline-adc/',
+        title: 'Pipeline ADC',
+        summary: 'Explore linked transfer and residue curves as each stage resolves a finer input interval.',
         thumb: 'pipe-intro',
       },
       {
@@ -71,12 +71,6 @@ export const topics: Topic[] = [
         title: 'Nonlinear calibration',
         summary: 'Learn an inverse, test on new data, and see what clipping and limited training cannot recover.',
         thumb: 'calibration',
-      },
-      {
-        href: '/adc/pipeline-adc/',
-        title: 'Pipeline ADC',
-        summary: 'Step through residue amplification and digital redundancy stage by stage.',
-        thumb: 'pipeline',
       },
       {
         href: '/adc/how-much-training/',
