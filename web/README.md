@@ -52,7 +52,8 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   scale; the residue amplifier's circuit gain is specified separately. Residue rows show amplifier output voltage, and
   the final row shows the last flash digit.
   DNL, INL and overall ADC transfer occupy three rows on the right, with ADC transfer filling the third row.
-  All three overall plots retain their full input or code range. Inject gain error and residue nonlinearity into a selected
+  All three overall plots retain their full input or code range. DNL and INL use a minimum vertical range of
+  −0.5 to +0.5 LSB, expanding symmetrically only when their data exceed that range. Inject gain error and residue nonlinearity into a selected
   stage to connect the changed residue with its complete static error pattern. All sliders and action buttons share a clearly bounded control panel above the plots: reset/random error actions
   sit beside the error sliders, and input/random-all actions sit beside the input slider.
   Both error controls span ±0.25% in 0.005% increments, with +0.10% default gain error. **Reset errors** clears both
