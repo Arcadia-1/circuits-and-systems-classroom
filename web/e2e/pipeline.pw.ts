@@ -181,12 +181,13 @@ test('voltage axes and ideal references stay fixed while architecture, input, an
         value: Number(tick.textContent?.replace('−', '-')), y: Number(tick.getAttribute('y')),
       }));
       const rows = Array.from(main.querySelectorAll('g[role="group"][aria-label^="Stage "]')).map(row => ({
-        description: row.getAttribute('aria-label'), ticks: ticks(row, 'text.y-tick'), ...reference(row),
+        description: row.getAttribute('aria-label'), ticks: ticks(row, 'text.y-tick'),
+        zeroY: Number(row.querySelector('line.baseline')?.getAttribute('y1')), ...reference(row),
       }));
       const transfer = main.querySelector('section[aria-label="ADC transfer"]')!;
       return { rows, transfer: {
         description: transfer.querySelector('desc')?.textContent,
-        ticks: ticks(transfer, 'text.tick[dy]'), ...reference(transfer),
+        ticks: ticks(transfer, 'text.tick[dy]'), zeroY: Number(transfer.querySelector('line.zero')?.getAttribute('y1')), ...reference(transfer),
       } };
     });
   }
@@ -208,6 +209,14 @@ test('voltage axes and ideal references stay fixed while architecture, input, an
     expect(Math.max(...actualChannels) - Math.min(...actualChannels), 'The actual curve remains colored').toBeGreaterThan(40);
   }
 
+  function expectVoltageZero(curve: { ticks: { value: number; y: number }[]; zeroY: number }) {
+    const top = curve.ticks.find(tick => tick.value === 1.1)!.y;
+    const bottom = curve.ticks.find(tick => tick.value === -0.1)!.y;
+    // On the requested -0.1…1.1 V display, 0 V sits one twelfth above
+    // the lower edge; it is no longer the midpoint of the voltage plot.
+    expect(curve.zeroY).toBeCloseTo(bottom - (bottom - top) / 12, 8);
+  }
+
   for (const { id, stages } of architectures) {
     await page.getByLabel('Architecture', { exact: true }).selectOption(id);
     await page.getByRole('button', { name: 'Reset errors', exact: true }).click();
@@ -218,14 +227,16 @@ test('voltage axes and ideal references stay fixed while architecture, input, an
     const before = await renderedAxes();
     expect(before.rows).toHaveLength(stages);
     for (const row of before.rows.slice(0, -1)) {
-      expect(row.description).toContain('Residue axis -1.2 to 1.2 volts.');
-      expect(row.ticks.map(tick => tick.value)).toEqual(expect.arrayContaining([-1.2, 1.2]));
+      expect(row.description).toContain('Residue axis -0.1 to 1.1 volts.');
+      expect(row.ticks.map(tick => tick.value)).toEqual(expect.arrayContaining([-0.1, 1.1]));
+      expectVoltageZero(row);
       expectReference({ ...row, description: row.description ?? undefined });
     }
     expect(before.rows.at(-1)!.ticks.map(tick => tick.value)).toEqual(expect.arrayContaining([0, flashMaximum[id]]));
     expect(before.rows.at(-1)!.description).not.toContain('Residue axis');
-    expect(before.transfer.description).toContain('Output · V: -1.2 to 1.2.');
-    expect(before.transfer.ticks.map(tick => tick.value)).toEqual([-1.2, 0, 1.2]);
+    expect(before.transfer.description).toContain('Output · V: -0.1 to 1.1.');
+    expect(before.transfer.ticks.map(tick => tick.value)).toEqual([-0.1, 0.5, 1.1]);
+    expectVoltageZero(before.transfer);
     expectReference(before.transfer);
 
     for (const [name, key, value] of [
@@ -239,7 +250,8 @@ test('voltage axes and ideal references stay fixed while architecture, input, an
       const after = await renderedAxes();
       expect(after.rows.map(row => row.ticks), `${id}: residue ticks stay fixed after ${name} ${key}`).toEqual(before.rows.map(row => row.ticks));
       expect(after.transfer.ticks, `${id}: transfer ticks stay fixed after ${name} ${key}`).toEqual(before.transfer.ticks);
-      expect(after.transfer.description).toContain('Output · V: -1.2 to 1.2.');
+      expect(after.transfer.description).toContain('Output · V: -0.1 to 1.1.');
+      expectVoltageZero(after.transfer);
       expect(after.rows[0].idealPath).toBe(before.rows[0].idealPath);
       expect(after.transfer.idealPath).toBe(before.transfer.idealPath);
       if (name === 'Input voltage') {
@@ -247,7 +259,8 @@ test('voltage axes and ideal references stay fixed while architecture, input, an
         expect(after.transfer.actualPath, 'Moving the sample must not rescale the complete ADC transfer').toBe(before.transfer.actualPath);
       }
       for (const row of after.rows.slice(0, -1)) {
-        expect(row.description).toContain('Residue axis -1.2 to 1.2 volts.');
+        expect(row.description).toContain('Residue axis -0.1 to 1.1 volts.');
+        expectVoltageZero(row);
         expectReference({ ...row, description: row.description ?? undefined });
       }
       expectReference(after.transfer);
@@ -256,20 +269,20 @@ test('voltage axes and ideal references stay fixed while architecture, input, an
   }
 });
 
-test('an overrange residue stays physically above 1.2 V and has an honest plot-edge marker', async ({ page }, testInfo) => {
+test('an overrange residue stays physically above 1.1 V and has an honest plot-edge marker', async ({ page }, testInfo) => {
   await page.goto(seededLesson({ topologyId: 'ten', input: 1,
     errorProfiles: { ten: Array.from({ length: 9 }, () => ({ gainError: 0.25, nonlinearity: 0 })) },
   }));
   await ready(page);
   const row = page.getByRole('group', { name: /^Stage 9,/ });
-  await expect(row).toHaveAttribute('aria-label', /Residue axis -1\.2 to 1\.2 volts\./);
+  await expect(row).toHaveAttribute('aria-label', /Residue axis -0\.1 to 1\.1 volts\./);
   const overflow = row.locator('path.overflow-marker');
   await expect(overflow).toBeVisible();
   const description = await overflow.locator('title').textContent();
-  expect(description).toContain('outside the fixed −1.2 to +1.2 V plot range');
-  expect(Number(description?.match(/Actual residue ([\d.eE+-]+) V/)?.[1])).toBeGreaterThan(1.2);
+  expect(description?.replaceAll('−', '-').replace(/\+(\d)/g, '$1')).toContain('outside the fixed -0.1 to 1.1 V plot range');
+  expect(Number(description?.match(/Actual residue ([\d.eE+-]+) V/)?.[1])).toBeGreaterThan(1.1);
   await expect(row.locator('circle.dot')).toHaveCount(0);
-  expect(await row.locator('text.y-tick').allTextContents()).toEqual(expect.arrayContaining(['+1.2', '-1.2']));
+  expect((await row.locator('text.y-tick').allTextContents()).map(value => Number(value.replace('−', '-')))).toEqual(expect.arrayContaining([1.1, -0.1]));
   await screenshot(page, testInfo, 'ten-stage-overrange-fixed-voltage-axes');
 });
 

@@ -1,5 +1,5 @@
 /** Voltage plots share a fixed scale so an error cannot rescale itself away. */
-export const VOLTAGE_DOMAIN = [-1.2, 1.2] as const;
+export const VOLTAGE_DOMAIN = [-0.1, 1.1] as const;
 
 /**
  * Common DNL/INL axis policy, in LSBs. Keep small errors on a fixed ±0.5

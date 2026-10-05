@@ -99,7 +99,7 @@
 <div class="shared-residues" class:narrow class:compressed bind:clientWidth={width} bind:clientHeight={height}>
   <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-labelledby={`${id}-title ${id}-description`}>
     <title id={`${id}-title`}>Progressive magnification through all {bits.length} pipeline stages</title>
-    <desc id={`${id}-description`}>Every row plots the original ADC input in volts. Each row expands the selected input interval in the row above; numerical axis limits show the magnification. Amplifier rows have a fixed residue axis from -1.2 to 1.2 volts; the final row shows the flash digit on its code scale. Colored solid curves are actual, gray dashed curves ideal. Dots follow the same sample.</desc>
+    <desc id={`${id}-description`}>Every row plots the original ADC input in volts. Each row expands the selected input interval in the row above; numerical axis limits show the magnification. Amplifier rows have a fixed residue axis from {VOLTAGE_DOMAIN[0]} to {VOLTAGE_DOMAIN[1]} volts; the final row shows the flash digit on its code scale. Colored solid curves are actual, gray dashed curves ideal. Dots follow the same sample.</desc>
     <defs>
       {#each geometry as row, index}
         <clipPath id={`${id}-row-${index}`}><rect x={left - 1} y={chartTop(index) - 3} width={right - left + 2} height={Math.max(1, chartBottom(index) - chartTop(index) + 6)} /></clipPath>
@@ -116,13 +116,13 @@
       {@const selectedLeft = boundedX(interval[0], row.domain)}
       {@const selectedRight = boundedX(interval[1], row.domain)}
       {#if row.injected}<rect class="injected-row" x="0" y={rowTop(index)} width={w} height={chartBottom(index) - rowTop(index) + 4} rx="4" />{/if}
-      <g role="group" aria-label={`Stage ${index + 1}, ${row.bits} bits. Original input range ${row.domain[0]} to ${row.domain[1]} volts. ${row.flash ? `Flash digit axis 0 to ${row.yDomain[1]}.` : 'Residue axis -1.2 to 1.2 volts.'} Sample ${row.input} volts; ${row.flash ? 'flash digit' : 'residue volts'} ${value}.${row.injected ? ` Gain error ${row.gainError} percent; nonlinearity ${row.nonlinearity} percent.` : ''}${row.window.boundaryOnly ? ' Boundary-only decision; finite ancestor context remains visible.' : ''}`}>
+      <g role="group" aria-label={`Stage ${index + 1}, ${row.bits} bits. Original input range ${row.domain[0]} to ${row.domain[1]} volts. ${row.flash ? `Flash digit axis 0 to ${row.yDomain[1]}.` : `Residue axis ${row.yDomain[0]} to ${row.yDomain[1]} volts.`} Sample ${row.input} volts; ${row.flash ? 'flash digit' : 'residue volts'} ${value}.${row.injected ? ` Gain error ${row.gainError} percent; nonlinearity ${row.nonlinearity} percent.` : ''}${row.window.boundaryOnly ? ' Boundary-only decision; finite ancestor context remains visible.' : ''}`}>
         <title>Stage {index + 1}: {row.flash ? 'final flash digit' : 'residue'} versus original Vin, {row.domain[0]}–{row.domain[1]} V{row.injected ? ` · gain error ${row.gainError}% · nonlinearity ${row.nonlinearity}%` : ''}</title>
         <text class="stage-label" x={narrow ? 4 : 8} y={chartTop(index) + (chartBottom(index) - chartTop(index)) * 0.4} style:fill={row.color}>{narrow ? 'S' : 'Stage '}{index + 1}</text>
         <text class="stage-detail" x={narrow ? 4 : 8} y={chartTop(index) + (chartBottom(index) - chartTop(index)) * 0.4 + (compressed ? 10 : 14)}>{row.bits}b · {row.flash ? narrow ? 'digit' : 'Flash digit' : narrow ? 'V' : 'residue V'}</text>
-        <text class="y-tick" x={left - 7} y={chartTop(index)} dy=".32em" text-anchor="end">{row.flash ? format(row.yDomain[1]) : '+1.2'}</text>
+        <text class="y-tick" x={left - 7} y={chartTop(index)} dy=".32em" text-anchor="end">{format(row.yDomain[1])}</text>
         <text class="y-tick" x={left - 7} y={chartBottom(index)} dy=".32em" text-anchor="end">{format(row.yDomain[0])}</text>
-        {#if !row.flash && chartBottom(index) - chartTop(index) >= 32}<text class="y-tick" x={left - 7} y={y(0,index,row.yDomain)} dy=".32em" text-anchor="end">0</text>{/if}
+        {#if !row.flash && chartBottom(index) - chartTop(index) >= 32}<text class="y-tick" x={left - 7} y={y(0.5,index,row.yDomain)} dy=".32em" text-anchor="end">0.5</text>{/if}
         <line class="baseline" x1={left} x2={right} y1={y(0,index,row.yDomain)} y2={y(0,index,row.yDomain)} />
         {#each [0, 0.5, 1] as fraction}
           {@const v = row.domain[0] + fraction * rowSpan}
@@ -140,7 +140,7 @@
           {#if outside}
             {@const edge = value > row.yDomain[1] ? chartTop(index) : chartBottom(index)}
             {@const inward = (value > row.yDomain[1] ? 1 : -1) * Math.min(6, (chartBottom(index) - chartTop(index)) / 2)}
-            <path class="overflow-marker" style:fill={row.color} d={`M${cursorX},${edge}L${cursorX - 4},${edge + inward}L${cursorX + 4},${edge + inward}Z`}><title>Actual residue {value} V is outside the fixed −1.2 to +1.2 V plot range.</title></path>
+            <path class="overflow-marker" style:fill={row.color} d={`M${cursorX},${edge}L${cursorX - 4},${edge + inward}L${cursorX + 4},${edge + inward}Z`}><title>Actual residue {value} V is outside the fixed {row.yDomain[0]} to {row.yDomain[1]} V plot range.</title></path>
           {:else}
             <circle class="dot-halo" cx={cursorX} cy={y(value, index, row.yDomain)} r={compressed ? 3.8 : 5.2} />
             <circle class="dot" style:fill={row.color} cx={cursorX} cy={y(value, index, row.yDomain)} r={compressed ? 2.5 : 3.5} />
