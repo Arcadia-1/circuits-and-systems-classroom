@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { convertPipeline, TOPOLOGIES } from '../src/illustrations/pipeline-intro/configurable';
-import { actualResidueCurves, analyzeLinearity, convertWithErrors, DEFAULT_ERRORS, type ErrorSettings } from '../src/illustrations/pipeline-intro/errors';
+import { actualResidueCurves, analyzeLinearity, convertWithErrors, DEFAULT_ERRORS, evaluateStage, normalizeErrorSettings, type ErrorSettings, type PipelineErrorSettings } from '../src/illustrations/pipeline-intro/errors';
 
 const settings = (gainError = 0, nonlinearity = 0, stage = 0): ErrorSettings => ({ stage, gainError, nonlinearity });
+
+/** Search the complete forward converter: independent of threshold back-propagation. */
+function crossing(bits: readonly number[], errors: PipelineErrorSettings, code: number): number {
+  let low = 0, high = 1;
+  for (let iteration = 0; iteration < 46; iteration++) {
+    const middle = (low + high) / 2;
+    if (convertWithErrors(middle, bits, errors).code < code) low = middle;
+    else high = middle;
+  }
+  return high;
+}
 
 describe('actual pipeline amplifier errors', () => {
   it.each(TOPOLOGIES)('$id reduces exactly to the ideal converter and uniform transitions with errors off', ({ bits }) => {
@@ -113,6 +124,102 @@ describe('actual pipeline amplifier errors', () => {
       const actual = convertWithErrors(input, bits, settings(1, 2, 2)), ideal = convertPipeline(input, bits);
       expect(actual.stages.slice(0, 2).map(stage => stage.residue)).toEqual(ideal.stages.slice(0, 2).map(stage => stage.residue));
     }
+  });
+});
+
+describe('independent simultaneous errors in every pipeline amplifier', () => {
+  it('normalizes sparse, unordered settings without mutating them or changing the legacy single-stage result', () => {
+    const bits = [3, 3, 3, 3], sparse = [settings(-0.1, 0.2, 2), settings(0.25, -0.15, 0)];
+    const saved = structuredClone(sparse);
+    expect(normalizeErrorSettings(bits, sparse)).toEqual([sparse[1], settings(0, 0, 1), sparse[0]]);
+    expect(sparse).toEqual(saved);
+    const legacy = settings(-0.5, 2, 1);
+    expect(analyzeLinearity(bits, [legacy])).toEqual(analyzeLinearity(bits, legacy));
+    expect(convertWithErrors(0.68, bits, [legacy])).toEqual(convertWithErrors(0.68, bits, legacy));
+    const ideal = analyzeLinearity(bits, []);
+    expect(ideal.nominalDnl.every(value => value === 0)).toBe(true);
+    expect(ideal.endpointInl.every(value => value === null || value === 0)).toBe(true);
+    expect(() => analyzeLinearity(bits, [legacy, legacy])).toThrow(RangeError);
+    expect(() => analyzeLinearity(bits, [legacy, settings(0, 0, 3)])).toThrow(RangeError);
+  });
+
+  it('propagates the first amplifier error into the separately distorted second amplifier', () => {
+    const errors = [settings(0.25, -0.2), settings(-0.1, 0.15, 1)];
+    const trace = convertWithErrors(0.68, [2, 2, 2], errors);
+    const r0 = 0.72, y0 = 1.0025 * r0 - 0.008 * r0 * (1 - r0) * (2 * r0 - 1);
+    const r1 = 4 * y0 - 2, y1 = 0.999 * r1 + 0.006 * r1 * (1 - r1) * (2 * r1 - 1);
+    expect(trace.stages[0].residue).toBeCloseTo(y0, 14);
+    expect(trace.stages[1].input).toBeCloseTo(y0, 14);
+    expect(trace.stages[1].residue).toBeCloseTo(y1, 14);
+    expect(trace.stages.map(stage => stage.injected)).toEqual([true, true, false]);
+  });
+
+  it.each(TOPOLOGIES)('$id solves cumulative crossings independently for mixed UI errors and full supported coefficients', ({ bits }) => {
+    for (const [gain, cubic] of [[0.25, -0.2], [-0.25, 0.25], [5, 5], [-5, -5]]) {
+      const errors = bits.slice(0, -1).map((_, stage) => settings(stage % 2 ? -gain : gain, stage % 3 ? -cubic : cubic, stage));
+      const a = analyzeLinearity(bits, errors), highest = convertWithErrors(1, bits, errors).code;
+      const stride = Math.max(1, Math.floor(a.levels / 97));
+      const codes = new Set([1, a.levels - 1, ...Array.from({ length: Math.ceil((a.levels - 1) / stride) }, (_, index) => 1 + index * stride)]);
+      for (const code of codes) {
+        expect(a.thresholds[code]).toBeCloseTo(crossing(bits, errors, code), 11);
+        expect(a.transitionValid[code]).toBe(code <= highest);
+      }
+      expect(a.monotonic).toBe(true);
+      expect(a.minimumDerivative).toBeGreaterThanOrEqual(0.75);
+      expect(a.widths.every(width => width >= 0)).toBe(true);
+      expect(a.widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(1, 14);
+      for (const code of a.missingCodes) expect(a.nominalDnl[code]).toBe(-1);
+    }
+  });
+
+  it('retains a suffix crossing above 1 V that an upstream over-gain amplifier can reach', () => {
+    const bits = [1, 1, 1, 4], errors = [settings(5), settings(-5, 0, 1)];
+    const a = analyzeLinearity(bits, errors);
+    const downstreamCrossing = (1 + (31 / 32) / 0.95) / 2;
+    expect(downstreamCrossing).toBeGreaterThan(1);
+    const expected = downstreamCrossing / (2 * 1.05);
+    expect(a.thresholds[63]).toBeCloseTo(expected, 14);
+    expect(convertWithErrors(expected - 1e-10, bits, errors).code).toBe(62);
+    expect(convertWithErrors(expected + 1e-10, bits, errors).code).toBe(63);
+  });
+
+  it('keeps the overrange amplifier law continuous, with matching positive endpoint slopes and no clipping', () => {
+    const errors = settings(-5, 5), h = 1e-7;
+    const f = (r: number) => evaluateStage(r / 2, 1, errors, 0).residue;
+    expect(f(0)).toBe(0);
+    expect(f(1)).toBe(0.95);
+    for (const endpoint of [0, 1]) {
+      expect((f(endpoint) - f(endpoint - h)) / h).toBeCloseTo(0.75, 6);
+      expect((f(endpoint + h) - f(endpoint)) / h).toBeCloseTo(0.75, 6);
+    }
+    expect(f(100)).toBeCloseTo(0.95 + 0.75 * 99, 12);
+    expect(f(-1)).toBe(-0.75);
+    const bits = TOPOLOGIES[0].bits;
+    const all = bits.slice(0, -1).map((_, stage) => settings(5, 5, stage));
+    const overrange = convertWithErrors(1, bits, all);
+    expect(overrange.stages[8].residue).toBeGreaterThan(1);
+    let previous = -1;
+    for (let i = 0; i <= 8192; i++) {
+      const code = convertWithErrors(i / 8192, bits, all).code;
+      expect(code).toBeGreaterThanOrEqual(previous);
+      previous = code;
+    }
+  });
+
+  it('agrees with an independent uniform-input histogram when two nonlinear amplifiers act together', () => {
+    const bits = [2, 2, 2], errors = [settings(4, -3), settings(-5, 4, 1)], count = 65536;
+    const a = analyzeLinearity(bits, errors), histogram = Array(64).fill(0) as number[];
+    for (let i = 0; i < count; i++) histogram[convertWithErrors((i + 0.5) / count, bits, errors).code]++;
+    a.widths.forEach((width, code) => expect(Math.abs(histogram[code] / count - width)).toBeLessThanOrEqual(1 / count));
+  });
+
+  it('uses all stages when drawing residue branches and checking stale analysis', () => {
+    const bits = [2, 2, 2], errors = [settings(0.25, -0.1), settings(-0.2, 0.25, 1)];
+    const a = analyzeLinearity(bits, errors), curves = actualResidueCurves(bits, [...errors].reverse(), a, 1, [0, 1]);
+    for (const curve of curves) for (const point of curve.slice(1, -1)) {
+      expect(point.y).toBe(convertWithErrors(point.x, bits, errors).stages[1].residue);
+    }
+    expect(() => actualResidueCurves(bits, [errors[0]], a, 1, [0, 1])).toThrow(RangeError);
   });
 });
 

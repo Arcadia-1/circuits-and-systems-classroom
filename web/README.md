@@ -53,13 +53,21 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   the final row shows the last flash digit.
   DNL, INL and overall ADC transfer occupy three rows on the right, with ADC transfer filling the third row.
   All three overall plots retain their full input or code range. DNL and INL use a minimum vertical range of
-  −0.5 to +0.5 LSB, expanding symmetrically only when their data exceed that range. Inject gain error and residue nonlinearity into a selected
-  stage to connect the changed residue with its complete static error pattern. All sliders and action buttons share a clearly bounded control panel above the plots: reset/random error actions
-  sit beside the error sliders, and input/random-all actions sit beside the input slider.
-  Both error controls span ±0.25% in 0.005% increments, with +0.10% default gain error. **Reset errors** clears both
-  errors without moving the input. **Random input**, **Random errors**, and **Random all** independently randomize
-  the input voltage, both selected-stage errors, or all three values; these actions pause the sweep and retain the
-  architecture and error stage.
+  −0.5 to +0.5 LSB, expanding symmetrically only when their data exceed that range. Every residue amplifier has independent
+  gain and nonlinearity settings, and all configured errors act simultaneously. **Edit stage** selects the controls'
+  editing target while preserving other stages' values; each architecture retains its own parameter profile. The final
+  flash has no residue amplifier and is excluded from error injection. DNL, INL and ADC transfer use thresholds from
+  the combined response of all stages.
+  All sliders and action buttons share a bounded panel above the plots: reset/random error actions sit beside the error
+  sliders, and input/random-all actions sit beside the input slider. Both error controls span ±0.25% in 0.005% increments.
+  Each architecture starts with +0.10% gain error in its first stage and zero errors elsewhere. **Reset errors** clears
+  every stage in the current architecture without moving the input. **Random input** changes only the input voltage;
+  **Random errors** changes both errors only in the stage being edited; **Random all** changes the input and both errors
+  in every residue stage of the current architecture. These actions pause the sweep and retain the architecture and
+  selected editing stage.
+  Within the nominal residue range 0–1 V, each amplifier uses `F(r) = (1 + g)r + 4nr(1 − r)(2r − 1)`, where `g` and `n`
+  are its percentage settings divided by 100. Outside that range, the model extends the corresponding endpoint tangent,
+  preserving a monotonic response without clipping analog residue. Subsequent quantizer decisions still saturate.
   The default architecture is four 3-bit stages, totaling 12 bits. Alternatives include ten stages (nine 1-bit stages
   plus a final 3-bit flash), three 4-bit stages, and a three-stage 6-bit preset. Endpoint fitting and reported extrema
   always use the full input range.

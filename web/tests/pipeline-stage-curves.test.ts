@@ -120,4 +120,22 @@ describe('local transfer characteristics of every pipeline stage', () => {
     expect(() => localStageCurves([2, 2, 2], { stage: 2, gainError: 0, nonlinearity: 0 })).toThrow(RangeError);
     expect(() => localStageCurves([2, 2, 2], { stage: 0, gainError: 6, nonlinearity: 0 })).toThrow(RangeError);
   });
+
+  it.each(TOPOLOGIES)('$id envelopes every reachable stage when errors accumulate through all amplifiers', ({ bits }) => {
+    for (const sign of [-1, 1]) {
+      const errors = bits.slice(0, -1).map((_, stage) => ({ stage, gainError: sign * 5, nonlinearity: stage % 2 ? -5 : 5 }));
+      const curves = localStageCurves(bits, errors);
+      for (let sample = 0; sample <= 512; sample++) {
+        const trace = convertWithErrors(sample / 512, bits, errors);
+        curves.forEach((curve, stage) => {
+          const local = trace.stages[stage], output = curve.flash ? local.digit : local.residue;
+          expect(local.input).toBeGreaterThanOrEqual(curve.inputRange[0]);
+          expect(local.input).toBeLessThanOrEqual(curve.inputRange[1]);
+          expect(output).toBeGreaterThanOrEqual(curve.outputRange[0]);
+          expect(output).toBeLessThanOrEqual(curve.outputRange[1]);
+          expect(output).toBeLessThanOrEqual(curve.yDomain[1]);
+        });
+      }
+    }
+  });
 });

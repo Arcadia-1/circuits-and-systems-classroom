@@ -1,4 +1,4 @@
-import { convertWithErrors, DEFAULT_ERRORS, evaluateStage, type ErrorSettings } from './errors';
+import { DEFAULT_ERRORS, evaluateStage, normalizeErrorSettings, type PipelineErrorSettings } from './errors';
 
 export interface StageCurvePoint { x: number; y: number }
 
@@ -25,14 +25,15 @@ export interface LocalStageCurve {
  * overrange is retained through all later stages. These are NOT curves versus
  * original Vin; moving markers must use the corresponding trace.stage.input.
  */
-export function localStageCurves(bits: readonly number[], settings: ErrorSettings = DEFAULT_ERRORS): LocalStageCurve[] {
-  convertWithErrors(0, bits, settings); // Shared validation; no independent error convention.
+export function localStageCurves(bits: readonly number[], settings: PipelineErrorSettings = DEFAULT_ERRORS): LocalStageCurve[] {
+  const normalized = normalizeErrorSettings(bits, settings);
+  const configured = new Set((Array.isArray(settings) ? settings : [settings]).map(entry => entry.stage));
   let reachableInputMax = 1;
   return bits.map((stageBits, stage): LocalStageCurve => {
-    const gain = 2 ** stageBits, flash = stage === bits.length - 1, injected = stage === settings.stage;
+    const gain = 2 ** stageBits, flash = stage === bits.length - 1, injected = configured.has(stage);
     const inputRange: [number, number] = [0, reachableInputMax];
     const xMax = Math.max(1, reachableInputMax);
-    const coefficients = injected ? settings : null;
+    const coefficients = normalized[stage] ?? null;
     const actual: StageCurvePoint[][] = [], ideal: StageCurvePoint[][] = [];
     for (let digit = 0; digit < gain; digit++) {
       const x0 = digit / gain, x1 = digit === gain - 1 ? xMax : (digit + 1) / gain;
@@ -43,7 +44,7 @@ export function localStageCurves(bits: readonly number[], settings: ErrorSetting
       } else {
         // All branch endpoints are exact one-sided values; cubic interiors are
         // sampled only for drawing. No line ever joins separate reset branches.
-        const count = injected && settings.nonlinearity !== 0 ? 33 : 2;
+        const count = coefficients && coefficients.nonlinearity !== 0 ? 33 : 2;
         actual.push(Array.from({ length: count }, (_, index) => {
           const x = x0 + (x1 - x0) * index / (count - 1);
           return { x, y: evaluateStage(x, stageBits, coefficients, digit).residue };
@@ -55,16 +56,14 @@ export function localStageCurves(bits: readonly number[], settings: ErrorSetting
     let reachableOutputMax: number;
     if (flash) {
       reachableOutputMax = evaluateStage(reachableInputMax, stageBits).digit;
-    } else if (injected) {
-      // Prior stages are ideal, so the injected amplifier receives complete
-      // nominal residue ramps. Its monotone cubic preserves the endpoint gain.
-      reachableOutputMax = evaluateStage(1, stageBits, settings).residue;
     } else if (reachableInputMax >= 1) {
-      reachableOutputMax = evaluateStage(reachableInputMax, stageBits).residue;
+      reachableOutputMax = evaluateStage(reachableInputMax, stageBits, coefficients).residue;
     } else {
       // A complete lower quantizer interval approaches residue 1 even when the
       // value at maximum input lies on a later, incomplete ramp.
-      reachableOutputMax = reachableInputMax >= 1 / gain ? 1 : gain * reachableInputMax;
+      reachableOutputMax = reachableInputMax >= 1 / gain
+        ? evaluateStage(1, stageBits, coefficients).residue
+        : evaluateStage(reachableInputMax, stageBits, coefficients).residue;
     }
 
     const displayedActualMax = flash ? gain - 1 : evaluateStage(xMax, stageBits, coefficients).residue;

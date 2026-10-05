@@ -7,24 +7,31 @@
 
   let topologyId=$state('three-bit'), input=$state(.68), playing=$state(false);
   const errorLimit=.25, errorStep=.005;
-  let errorStage=$state(0), gainError=$state(.1), nonlinearity=$state(0), mobileView=$state<'stages'|'overall'>('stages');
+  type StageErrors = { gainError:number; nonlinearity:number };
+  let errorStage=$state(0), mobileView=$state<'stages'|'overall'>('stages');
+  let errorProfiles=$state<Record<string,StageErrors[]>>(Object.fromEntries(TOPOLOGIES.map(t=>[t.id,t.bits.slice(0,-1).map((_,stage)=>({gainError:stage===0?.1:0,nonlinearity:0}))])));
   let notes:HTMLDialogElement|undefined=$state();
   const topology=$derived(TOPOLOGIES.find(t=>t.id===topologyId)!);
-  const settings=$derived({stage:errorStage,gainError,nonlinearity});
+  const stageErrors=$derived(errorProfiles[topology.id]);
+  const selectedStage=$derived(Math.min(errorStage,stageErrors.length-1));
+  const currentErrors=$derived(stageErrors[selectedStage]);
+  const settings=$derived(stageErrors.map((values,stage)=>({stage,...values})));
+  const activeStages=$derived(stageErrors.flatMap((values,stage)=>values.gainError!==0||values.nonlinearity!==0?[stage+1]:[]));
   const analysis=$derived(analyzeLinearity(topology.bits,settings));
   const conversion=$derived(convertWithErrors(input,topology.bits,settings));
   const domain:[number,number]=[0,1];
   const binary=(v:number,n:number)=>v.toString(2).padStart(n,'0');
   const percent=(v:number)=>`${v>0?'+':''}${v.toFixed(3)}%`;
-  function changeTopology(){errorStage=0;playing=false;}
-  function ideal(){playing=false;gainError=0;nonlinearity=0;}
+  function changeTopology(value:string){playing=false;errorStage=0;topologyId=value;}
+  function ideal(){playing=false;errorProfiles[topologyId]=stageErrors.map(()=>({gainError:0,nonlinearity:0}));}
   function randomize(target:'input'|'errors'|'all'){
     playing=false;
     if(target!=='errors')input=Math.floor(Math.random()*65537)/65536;
     if(target!=='input'){
       const steps=Math.round(errorLimit/errorStep);
       const draw=()=>Number(((Math.floor(Math.random()*(2*steps+1))-steps)*errorStep).toFixed(3));
-      gainError=draw();nonlinearity=draw();
+      if(target==='all')errorProfiles[topologyId]=stageErrors.map(()=>({gainError:draw(),nonlinearity:draw()}));
+      else {currentErrors.gainError=draw();currentErrors.nonlinearity=draw();}
     }
   }
   onMount(()=>{
@@ -41,13 +48,13 @@
 <main class="pipeline-lab">
   <section class="control-panel" aria-label="Pipeline controls">
     <div class="lab-toolbar">
-      <div class="architecture"><label for="pipeline-architecture">Architecture</label><select id="pipeline-architecture" bind:value={topologyId} onchange={changeTopology}>{#each TOPOLOGIES as t}<option value={t.id}>{t.label}</option>{/each}</select></div>
-      <div class="injection"><label for="error-stage">Error in</label><select id="error-stage" bind:value={errorStage}>{#each topology.bits.slice(0,-1) as _,i}<option value={i}>Stage {i+1}</option>{/each}</select></div>
-      <div class="error-range"><Range id="gain-error" bind:value={gainError} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(gainError)}>Gain error</Range></div>
-      <div class="error-range"><Range id="nonlinearity" bind:value={nonlinearity} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(nonlinearity)}>Nonlinearity</Range></div>
+      <div class="architecture"><label for="pipeline-architecture">Architecture</label><select id="pipeline-architecture" value={topologyId} onchange={(event)=>changeTopology(event.currentTarget.value)}>{#each TOPOLOGIES as t}<option value={t.id}>{t.label}</option>{/each}</select></div>
+      <div class="injection"><label for="error-stage">Edit stage</label><select id="error-stage" value={selectedStage} onchange={(event)=>{playing=false;errorStage=Number(event.currentTarget.value);}}>{#each stageErrors as values,i}<option value={i}>Stage {i+1}{values.gainError!==0||values.nonlinearity!==0?" •":""}</option>{/each}</select></div>
+      <div class="error-range"><Range id="gain-error" bind:value={currentErrors.gainError} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(currentErrors.gainError)}>Gain error</Range></div>
+      <div class="error-range"><Range id="nonlinearity" bind:value={currentErrors.nonlinearity} min={-errorLimit} max={errorLimit} step={errorStep} output={percent(currentErrors.nonlinearity)}>Nonlinearity</Range></div>
       <div class="error-actions" role="group" aria-label="Error actions">
-        <button title="Set both errors to zero; keep the input voltage" onclick={ideal}>Reset errors</button>
-        <button title="Randomize gain error and nonlinearity in the selected stage" onclick={()=>randomize('errors')}>Random errors</button>
+        <button title="Set gain error and nonlinearity to zero in every stage; keep the input voltage" onclick={ideal}>Reset errors</button>
+        <button title="Randomize only this stage; keep errors in all other stages" onclick={()=>randomize('errors')}>Random errors</button>
       </div>
     </div>
     <div class="control-deck">
@@ -55,11 +62,12 @@
       <div class="input-control"><Range id="pipeline-input" bind:value={input} min={0} max={1} step={1/65536} output={`${input.toFixed(6)} V`} onstart={()=>playing=false}>Input voltage</Range></div>
       <div class="input-actions" role="group" aria-label="Input and combined actions">
         <button title="Randomize only the input voltage" onclick={()=>randomize('input')}>Random input</button>
-        <button class="random-all" title="Randomize the input voltage and both errors" onclick={()=>randomize('all')}>Random all</button>
+        <button class="random-all" title="Randomize the input voltage and gain/nonlinearity in every stage" onclick={()=>randomize('all')}>Random all</button>
       </div>
       <div class="output"><span>{conversion.totalBits}-BIT OUTPUT</span><b>{binary(conversion.code,conversion.totalBits)}</b><small>code {conversion.code}</small></div>
       <button class="notes" aria-label="Model notes" title="Model notes" onclick={()=>notes?.showModal()}>ⓘ</button>
     </div>
+    <div class="error-summary" aria-live="polite">{activeStages.length?`Errors active: ${activeStages.map(stage=>`S${stage}`).join(" · ")}`:"All stages ideal"}<span>Each stage keeps its own settings</span></div>
   </section>
   <div class="context">
     <div class="legend"><span class="actual"></span> Actual <span class="reference"></span> Ideal <span class="architecture-note">· {conversion.totalBits}-bit, nonredundant</span></div>
@@ -72,7 +80,7 @@
 <dialog bind:this={notes} aria-labelledby="pipeline-notes-title">
   <div class="dialog-head"><h2 id="pipeline-notes-title">Every stage, one conversion</h2><button aria-label="Close model notes" onclick={()=>notes?.close()}>×</button></div>
   <p>Each stage resolves b bits: q = clamp(floor(2ᵇu), 0, 2ᵇ − 1), DAC = q / 2ᵇ, and ideal residue r = 2ᵇ(u − DAC). The final flash adds bits without another residue amplifier. The 10-stage preset is 9 × 1 bit + 3 bits = 12 bits.</p>
-  <p>The selected amplifier produces F(r) = (1 + g)r + 4nr(1 − r)(2r − 1), where g and n are the two percentage settings divided by 100. The cubic term preserves both endpoints. Analog residue is never clipped; subsequent digital decisions saturate. One amplifier has errors at a time.</p>
+  <p>Each residue amplifier independently produces F(r) = (1 + g)r + 4nr(1 − r)(2r − 1), where g and n are the two percentage settings divided by 100. The cubic term preserves both endpoints. Outside the nominal residue range 0–1 V, the amplifier follows the endpoint tangent to preserve a monotonic overrange response. Analog residue is never clipped; subsequent digital decisions saturate. Errors in every configured stage act together, and each architecture retains its own settings. Reset errors clears all stages; Random errors changes only the stage being edited; Random all changes the input and every stage.</p>
   <p>DNL[k] = (T[k + 1] − T[k]) / LSB − 1, with nominal LSB = 1 / {analysis.levels} V. It includes the measured widths of the first and last bins. A zero-width code has DNL = −1. INL uses a line through the first and last observed transitions, in fitted LSBs; unreachable transitions are omitted. {analysis.endpointCodes?`Current fit: transitions ${analysis.endpointCodes[0]}–${analysis.endpointCodes[1]}.`:''}</p>
   <p>Every stage is visible together. Each row enlarges the original-input interval selected by the preceding digital decisions. The horizontal axis is original Vin in every row, with explicitly different bounds. The highlighted interval expands into the next row; its displayed zoom ratio is a viewing scale, not the residue amplifier gain. Curves show actual residue after each amplifier, and the last row shows only the final flash digit. DNL and INL retain the full code range. Numerical extrema and the INL endpoint fit always use the full input range.</p>
   <p>This is a static, nonredundant pipeline model. Redundant decision stages, digital correction, settling and noise are not modeled.</p>
@@ -81,6 +89,7 @@
 <style>
   .pipeline-lab { height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:12px; padding:12px 24px; background:#fff; }
   .control-panel { display:grid; gap:10px; min-width:0; padding:10px 14px; border:1px solid #dbe4e8; border-radius:8px; background:#f5f8fa; }
+  .error-summary { display:flex; justify-content:space-between; gap:12px; color:#976023; font:10px var(--mono); }.error-summary span { color:var(--ink-3); font-family:var(--sans); }
   .lab-toolbar { display:grid; grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr) auto; align-items:center; gap:16px; }
   .architecture,.injection { display:flex; align-items:center; gap:8px; min-width:0; }.architecture>label { display:none; }
   label { font-size:11px; color:var(--ink-3); }
@@ -132,6 +141,7 @@
     .error-range :global(label),.error-range :global(output) { font-size:9px; }
     .input-control :global(output) { font-size:11px; }.play { padding:7px; }.play>span:last-child { display:none; }
     .input-actions { gap:6px; }.output { padding-left:8px; }.output b { font-size:10px; }.output>span { font-size:7px; }
+    .error-summary { font-size:9px; }.error-summary span { display:none; }
     .legend { font-size:9px; }.mobile-tabs button { font-size:9px; }
   }
   @media(max-height:550px) {

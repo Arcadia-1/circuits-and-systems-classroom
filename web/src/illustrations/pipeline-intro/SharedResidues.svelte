@@ -1,17 +1,17 @@
 <script lang="ts">
   import { residueRamps } from './configurable';
   import { progressiveWindows } from './progressive';
-  import { actualResidueCurves, type ErrorSettings, type ErrorConversion, type LinearityAnalysis, type ResiduePoint } from './errors';
+  import { actualResidueCurves, normalizeErrorSettings, type PipelineErrorSettings, type ErrorConversion, type LinearityAnalysis, type ResiduePoint } from './errors';
 
   let { bits, settings, analysis, conversion }: {
     bits: readonly number[];
-    settings: ErrorSettings;
+    settings: PipelineErrorSettings;
     analysis: LinearityAnalysis;
     conversion: ErrorConversion;
   } = $props();
 
   type Domain = [number, number];
-  type Row = { key: string; domain: Domain; actual: ResiduePoint[][]; ideal: ResiduePoint[][]; maximum: number; flash: boolean; bits: number; color: string; injected: boolean };
+  type Row = { key: string; domain: Domain; actual: ResiduePoint[][]; ideal: ResiduePoint[][]; maximum: number; flash: boolean; bits: number; color: string; injected: boolean; gainError: number; nonlinearity: number };
   const id = $props.id();
   let width = $state(860), height = $state(630);
   const w = $derived(Math.max(1, width)), h = $derived(Math.max(1, height));
@@ -29,6 +29,8 @@
   const format = (value: number) => String(Number(value.toPrecision(4)));
   const voltage = (value: number, span: number) => String(Number(value.toFixed(Math.min(9, Math.max(2, Math.ceil(-Math.log10(span / 4)) + 1)))));
   const windows = $derived(progressiveWindows(conversion, analysis));
+  const stageErrors = $derived(normalizeErrorSettings(bits, settings));
+  const errorKey = $derived(stageErrors.map(error => `${error.stage}:${error.gainError},${error.nonlinearity}`).join(';'));
   const x = (value: number, domain: Domain) => left + (value - domain[0]) / (domain[1] - domain[0]) * (right - left);
 
   // Only prefix crossings change these domains. Sweeping within a selected
@@ -36,11 +38,12 @@
   const rowCache = new Map<string, Row>();
   const pathCache = new Map<string, { actualPath: string; idealPath: string }>();
   function buildRow(index: number, domain: Domain): Row {
-    const key = `${bits.join(',')}|${settings.stage}|${settings.gainError}|${settings.nonlinearity}|${index}|${domain.join(',')}`;
+    const key = `${bits.join(',')}|${errorKey}|${index}|${domain.join(',')}`;
     const cached = rowCache.get(key);
     if (cached) return cached;
     const stageBits = bits[index], flash = index === bits.length - 1;
-    const injected = index === settings.stage && (settings.gainError !== 0 || settings.nonlinearity !== 0);
+    const error = stageErrors[index];
+    const injected = error !== undefined && (error.gainError !== 0 || error.nonlinearity !== 0);
     const actual: ResiduePoint[][] = [], ideal: ResiduePoint[][] = [];
     let maximum = flash ? 2 ** stageBits - 1 : 1;
     if (flash) {
@@ -60,7 +63,7 @@
       for (const segment of actual) for (const point of segment) maximum = Math.max(maximum, point.y);
       maximum = Math.ceil((maximum - 1e-12) * 100) / 100;
     }
-    const row = { key, domain, actual, ideal, maximum, flash, bits: stageBits, injected, color: flash ? '#aa710c' : injected ? '#c46a29' : '#008b91' };
+    const row = { key, domain, actual, ideal, maximum, flash, bits: stageBits, injected, gainError: error?.gainError ?? 0, nonlinearity: error?.nonlinearity ?? 0, color: flash ? '#aa710c' : injected ? '#c46a29' : '#008b91' };
     if (rowCache.size > 192) rowCache.clear();
     rowCache.set(key, row);
     return row;
@@ -87,7 +90,9 @@
       if (pathCache.size > 192) pathCache.clear();
       pathCache.set(key, paths);
     }
-    return { ...row, ...paths };
+    // Keep every row's display values together. A shorter topology must never
+    // let an old SVG row dereference an index in a newer conversion array.
+    return { ...row, ...paths, stage: conversion.stages[index], window, input: conversion.input, nextDomain: windows[index + 1]?.domain ?? null };
   }));
   const boundedX = (value: number, domain: Domain) => Math.min(right, Math.max(left, x(value, domain)));
 </script>
@@ -103,16 +108,16 @@
     </defs>
 
     {#each geometry as row, index}
-      {@const stage = conversion.stages[index]}
+      {@const stage = row.stage}
       {@const value = row.flash ? stage.digit : stage.residue}
-      {@const interval = windows[index].selected ?? row.domain}
+      {@const interval = row.window.selected ?? row.domain}
       {@const rowSpan = row.domain[1] - row.domain[0]}
-      {@const cursorX = boundedX(conversion.input, row.domain)}
+      {@const cursorX = boundedX(row.input, row.domain)}
       {@const selectedLeft = boundedX(interval[0], row.domain)}
       {@const selectedRight = boundedX(interval[1], row.domain)}
       {#if row.injected}<rect class="injected-row" x="0" y={rowTop(index)} width={w} height={chartBottom(index) - rowTop(index) + 4} rx="4" />{/if}
-      <g role="group" aria-label={`Stage ${index + 1}, ${row.bits} bits. Original input range ${row.domain[0]} to ${row.domain[1]} volts. Sample ${conversion.input} volts; ${row.flash ? 'flash digit' : 'residue volts'} ${value}.${windows[index].boundaryOnly ? ' Boundary-only decision; finite ancestor context remains visible.' : ''}`}>
-        <title>Stage {index + 1}: {row.flash ? 'final flash digit' : 'residue'} versus original Vin, {row.domain[0]}–{row.domain[1]} V</title>
+      <g role="group" aria-label={`Stage ${index + 1}, ${row.bits} bits. Original input range ${row.domain[0]} to ${row.domain[1]} volts. Sample ${row.input} volts; ${row.flash ? 'flash digit' : 'residue volts'} ${value}.${row.injected ? ` Gain error ${row.gainError} percent; nonlinearity ${row.nonlinearity} percent.` : ''}${row.window.boundaryOnly ? ' Boundary-only decision; finite ancestor context remains visible.' : ''}`}>
+        <title>Stage {index + 1}: {row.flash ? 'final flash digit' : 'residue'} versus original Vin, {row.domain[0]}–{row.domain[1]} V{row.injected ? ` · gain error ${row.gainError}% · nonlinearity ${row.nonlinearity}%` : ''}</title>
         <text class="stage-label" x={narrow ? 4 : 8} y={chartTop(index) + (chartBottom(index) - chartTop(index)) * 0.4} style:fill={row.color}>{narrow ? 'S' : 'Stage '}{index + 1}</text>
         <text class="stage-detail" x={narrow ? 4 : 8} y={chartTop(index) + (chartBottom(index) - chartTop(index)) * 0.4 + (compressed ? 10 : 14)}>{row.bits}b · {row.flash ? narrow ? 'digit' : 'Flash digit' : narrow ? 'V' : 'residue V'}</text>
         <text class="y-tick" x={left - 7} y={chartTop(index)} dy=".32em" text-anchor="end">{format(row.maximum)}</text>
@@ -124,7 +129,7 @@
           <text class="x-tick" x={x(v, row.domain)} y={chartBottom(index) + Math.max(5, tickBand - 1)} text-anchor={fraction === 0 ? 'start' : fraction === 1 ? 'end' : 'middle'}>{voltage(v, rowSpan)}</text>
         {/each}
         <g clip-path={`url(#${id}-row-${index})`}>
-          {#if index < bits.length - 1}
+          {#if row.nextDomain}
             {#if selectedRight > selectedLeft}<rect class="selected-interval" x={selectedLeft} y={chartTop(index)} width={selectedRight - selectedLeft} height={chartBottom(index) - chartTop(index)} />
             {:else}<line class="boundary" x1={selectedLeft} x2={selectedLeft} y1={chartTop(index)} y2={chartBottom(index)} />{/if}
           {/if}
@@ -135,9 +140,8 @@
           <circle class="dot" style:fill={row.color} cx={cursorX} cy={y(value, index, row.maximum)} r={compressed ? 2.5 : 3.5} />
         </g>
       </g>
-      {#if index < bits.length - 1}
-        {@const next = geometry[index + 1]}
-        {@const zoom = windows[index].zoom}
+      {#if row.nextDomain}
+        {@const zoom = row.window.zoom}
         {@const startY = chartBottom(index) + tickBand + 2}
         {@const endY = chartTop(index + 1) - 3}
         {@const labelY = startY + (endY - startY) * 0.57 + 3}
@@ -148,7 +152,7 @@
         {:else}
           {#if endY - startY >= 7}<text class="zoom-label" x={(left + right) / 2} y={labelY} text-anchor="middle">Boundary-only decision · wider context</text>{/if}
         {/if}
-        {#if endY > startY}<line class="cursor-link" x1={cursorX} y1={startY} x2={boundedX(conversion.input, next.domain)} y2={endY} />{/if}
+        {#if endY > startY}<line class="cursor-link" x1={cursorX} y1={startY} x2={boundedX(row.input, row.nextDomain)} y2={endY} />{/if}
       {/if}
     {/each}
     <text class="axis-title" x={right} y={h - 2} text-anchor="end">Every x axis: original Vin · V</text>

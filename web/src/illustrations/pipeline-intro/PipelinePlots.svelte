@@ -1,10 +1,10 @@
 <script lang="ts">
   import CurvePanel from './CurvePanel.svelte';
   import { transferSteps } from './configurable';
-  import { type ErrorConversion, type ErrorSettings, type LinearityAnalysis } from './errors';
+  import { type ErrorConversion, type PipelineErrorSettings, type LinearityAnalysis } from './errors';
   import SharedResidues from './SharedResidues.svelte';
   let { bits, settings, analysis, conversion, domain, mobileView }: {
-    bits:readonly number[]; settings:ErrorSettings; analysis:LinearityAnalysis; conversion:ErrorConversion;
+    bits:readonly number[]; settings:PipelineErrorSettings; analysis:LinearityAnalysis; conversion:ErrorConversion;
     domain:[number,number]; mobileView:'stages'|'overall';
   } = $props();
   type Point = {x:number;y:number};
@@ -50,7 +50,9 @@
 <div class="plot-layout" class:show-overall={mobileView==='overall'}>
   <section class="residue-section" aria-label="Progressive residue curves for every stage">
     <header class="section-heading"><h2>Each row expands the selected interval above</h2><span>Original input · V</span></header>
-    <SharedResidues {bits} {settings} {analysis} {conversion}/>
+    {#key bits.join(',')}
+      <SharedResidues {bits} {settings} {analysis} {conversion}/>
+    {/key}
   </section>
   <section class="linearity-section" aria-label="Overall converter performance">
     <CurvePanel title="DNL" detail={linearity.dnlDetail} color="#147a9c" xDomain={codeDomain} yDomain={linearity.dnlDomain} xLabel="Output code" yLabel="DNL · nominal LSB" series={linearity.dnl} marker={{x:conversion.code+.5,y:analysis.nominalDnl[conversion.code]}} vertical={conversion.code+.5}/>
