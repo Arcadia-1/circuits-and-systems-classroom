@@ -4,6 +4,20 @@ import react from '@astrojs/react';
 import svelte from '@astrojs/svelte';
 import sitemap from '@astrojs/sitemap';
 import { publicLessonPaths } from './src/data/publication.ts';
+import { execFileSync } from 'node:child_process';
+
+// Embedded in diagnostic exports so a replay can be matched to its source build.
+/** @param {string[]} args */
+const git = (args) => {
+  try { return execFileSync('git', args, { encoding: 'utf8' }).trim(); }
+  catch { return null; }
+};
+const workingTree = git(['status', '--porcelain']);
+const buildInfo = {
+  revision: process.env.GITHUB_SHA || git(['rev-parse', 'HEAD']) || 'unknown',
+  builtAt: new Date().toISOString(),
+  dirty: workingTree === null ? null : workingTree.length > 0,
+};
 
 const publicPages = new Set(['/', ...publicLessonPaths]);
 
@@ -15,5 +29,6 @@ export default defineConfig({
   output: 'static',
   trailingSlash: 'always',
   integrations: [svelte(), react(), sitemap({ filter: (page) => publicPages.has(new URL(page).pathname) })],
+  vite: { define: { __CLASSROOM_BUILD__: JSON.stringify(buildInfo) } },
   build: { format: 'directory', inlineStylesheets: 'auto' },
 });

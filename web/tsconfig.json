@@ -4,6 +4,8 @@
     ".astro/types.d.ts",
     "src/**/*",
     "tests/**/*",
+    "e2e/**/*",
+    "playwright.config.ts",
     "analytics/AnalyticsPage.tsx",
     "analytics/client.ts",
     "analytics/worldMap.ts"

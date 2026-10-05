@@ -4,3 +4,5 @@ dist/
 .wrangler/
 __pycache__/
 worker/worker-configuration.d.ts
+playwright-report/
+test-results/

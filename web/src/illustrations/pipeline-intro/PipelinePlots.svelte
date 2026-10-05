@@ -1,6 +1,7 @@
 <script lang="ts">
   import CurvePanel from './CurvePanel.svelte';
   import { transferSteps } from './configurable';
+  import { linearityDomain } from './display';
   import { type ErrorConversion, type PipelineErrorSettings, type LinearityAnalysis } from './errors';
   import SharedResidues from './SharedResidues.svelte';
   let { bits, settings, analysis, conversion, domain, mobileView }: {
@@ -9,12 +10,6 @@
   } = $props();
   type Point = {x:number;y:number};
   type Series = {points:Point[];ghost?:boolean};
-  const extent = (values:number[]):[number,number] => {
-    let peak=0;
-    for(const value of values) peak=Math.max(peak,Math.abs(value));
-    const limit=peak<=.5?.5:Math.ceil(peak*1.1*10)/10;
-    return [-limit,limit];
-  };
   const rangeText = (values:number[]) => {
     let low=Infinity,high=-Infinity;
     for(const v of values){low=Math.min(low,v);high=Math.max(high,v);}
@@ -42,7 +37,7 @@
     analysis.endpointInl.forEach((y,k)=>{if(y===null){if(branch.length)inl.push({points:branch});branch=[];}else branch.push({x:k,y});});
     if(branch.length)inl.push({points:branch});
     const inlValues=analysis.endpointInl.filter((v):v is number=>v!==null);
-    return {dnl,inl,dnlDomain:extent(analysis.nominalDnl),inlDomain:extent(inlValues),
+    return {dnl,inl,dnlDomain:linearityDomain(analysis.nominalDnl),inlDomain:linearityDomain(inlValues),
       dnlDetail:rangeText(analysis.nominalDnl),inlDetail:rangeText(inlValues)};
   });
 </script>

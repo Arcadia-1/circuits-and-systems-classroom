@@ -9,6 +9,9 @@
     "build": "astro build",
     "preview": "astro preview",
     "test": "vitest run",
+    "test:browser": "playwright test",
+    "browser:check": "pnpm build && pnpm test:browser",
+    "test:browser:report": "playwright show-report",
     "check": "astro check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && wrangler types --config worker/wrangler.jsonc --include-env=false worker/worker-configuration.d.ts > /dev/null && tsc -p worker && vitest run",
     "deploy:analytics": "wrangler deploy --config worker/wrangler.jsonc"
   },
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.170.0",

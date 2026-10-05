@@ -150,7 +150,8 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
 1. Write the model in `src/illustrations/<topic>/model.ts`, a Python reference in `python/` and a test in `tests/`.
 2. Build the page component next to the model from the shared `ui` and `chart` components.
 3. Add a route in `src/pages/<topic>/` that renders the component with `client:load` and imports `illustration.css`.
-4. List it in `src/data/illustrations.ts` and draw its thumbnail in `src/components/Thumb.astro`. Add reviewed lessons to
+4. List it in `src/data/illustrations.ts` and draw its thumbnail in `src/components/Thumb.astro`. Apply the
+   [teaching review standards](CODING_STANDARDS.md) before adding reviewed lessons to
    `src/data/publication.ts` so they appear in the catalog and sitemap; register any new route prefix in `isLessonPath`
    and `functions/_middleware.js`.
 5. Run `pnpm check` and `pnpm build`.
@@ -176,7 +177,31 @@ deploys `dist/` to the existing Cloudflare Pages project `ams-class`, ensures
 both domains is declared in `worker/wrangler.jsonc` and deployed separately with `pnpm deploy:analytics`. The old host keeps
 the ADCToolbox manual; its home page and tutorial paths redirect to the matching path on the new host.
 
+The site deploys only after both numerical verification and the browser regressions succeed.
+
+The numerical drift job resolves ADCToolbox's upstream revision once; the manual checkout uses that exact SHA. The raw
+English and Chinese Sphinx outputs are cached by that SHA, Python and installed dependency versions, and build/postprocess
+configuration. Dependency resolution still runs before lookup so newly selected tooling invalidates the cache. Each run
+copies the raw cache into `dist/doc` and applies the current site postprocessing there, leaving the cached manual untouched.
+
+## Browser regression and replay
+
+From `web/`, run `pnpm browser:check` to build and test an isolated production preview on port 4333. Playwright owns that
+server and refuses to reuse an existing one. Stop any preview serving `dist/` before rebuilding it; keep the build fixed
+throughout a preview session. Reports live in `playwright-report/` and `test-results/`. Browser test fixtures attach
+screenshots and console-event diagnostics, with traces retained on failure. CI uploads these as `browser-regression`
+artifacts even when a test fails.
+
+For a Pipeline ADC issue, open **Model notes → Copy replay link** or **Save diagnostic report**. The JSON report contains
+all architectures' error profiles, input, selected stage, random-generator state, build revision/dirty flag/build time,
+capture time, viewport dimensions/device-pixel ratio, browser identity and captured browser errors. Opening its replay
+URL restores the parameters, selected plot group and next random sequence with Sweep paused. Match the viewport manually
+from the report when reproducing a layout issue; the replay URL restores lesson state, not window size.
+
 ## Editorial and visual direction
+
+[Teaching review standards](CODING_STANDARDS.md) define the judgments used to review a lesson's causal explanation,
+comparisons and display transformations.
 
 Use **Circuits & Systems Classroom** as the site brand. The public catalog is intentionally small: seven reviewed ADC
 lessons, two PLL lessons, one amplifier lesson, three SerDes lessons and the selected Bode-plot tool. Other experiments remain available by direct URL with `noindex`

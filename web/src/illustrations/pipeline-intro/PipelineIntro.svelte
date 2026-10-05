@@ -2,14 +2,17 @@
   import { onMount } from 'svelte';
   import Range from '../../components/ui/Range.svelte';
   import PipelinePlots from './PipelinePlots.svelte';
-  import { TOPOLOGIES } from './configurable';
+  import { TOPOLOGIES, type PipelineTopology } from './configurable';
   import { convertWithErrors, analyzeLinearity } from './errors';
+  import { ERROR_LIMIT, ERROR_STEP, initialErrorProfiles, nextRandom, parseReplayHash, replayHash, validateSnapshot, type PipelineSnapshot } from './session';
+  import { captureBrowserIssues } from './diagnostics';
 
-  let topologyId=$state('three-bit'), input=$state(.68), playing=$state(false);
-  const errorLimit=.25, errorStep=.005;
-  type StageErrors = { gainError:number; nonlinearity:number };
+  let topologyId=$state<PipelineTopology['id']>('three-bit'), input=$state(.68), playing=$state(false);
+  const errorLimit=ERROR_LIMIT, errorStep=ERROR_STEP;
   let errorStage=$state(0), mobileView=$state<'stages'|'overall'>('stages');
-  let errorProfiles=$state<Record<string,StageErrors[]>>(Object.fromEntries(TOPOLOGIES.map(t=>[t.id,t.bits.slice(0,-1).map((_,stage)=>({gainError:stage===0?.1:0,nonlinearity:0}))])));
+  let errorProfiles=$state(initialErrorProfiles());
+  let randomState=0, diagnostics:ReturnType<typeof captureBrowserIssues>|undefined;
+  let replayStatus=$state(''), replayFallback=$state(''), replayWarning=$state('');
   let notes:HTMLDialogElement|undefined=$state();
   const topology=$derived(TOPOLOGIES.find(t=>t.id===topologyId)!);
   const stageErrors=$derived(errorProfiles[topology.id]);
@@ -22,26 +25,65 @@
   const domain:[number,number]=[0,1];
   const binary=(v:number,n:number)=>v.toString(2).padStart(n,'0');
   const percent=(v:number)=>`${v>0?'+':''}${v.toFixed(3)}%`;
-  function changeTopology(value:string){playing=false;errorStage=0;topologyId=value;}
+  function changeTopology(value:string){
+    const next=TOPOLOGIES.find(candidate=>candidate.id===value);
+    if(next){playing=false;errorStage=0;topologyId=next.id;}
+  }
   function ideal(){playing=false;errorProfiles[topologyId]=stageErrors.map(()=>({gainError:0,nonlinearity:0}));}
+  function random(){const next=nextRandom(randomState);randomState=next.state;return next.value;}
   function randomize(target:'input'|'errors'|'all'){
     playing=false;
-    if(target!=='errors')input=Math.floor(Math.random()*65537)/65536;
+    if(target!=='errors')input=Math.floor(random()*65537)/65536;
     if(target!=='input'){
       const steps=Math.round(errorLimit/errorStep);
-      const draw=()=>Number(((Math.floor(Math.random()*(2*steps+1))-steps)*errorStep).toFixed(3));
+      const draw=()=>Number(((Math.floor(random()*(2*steps+1))-steps)*errorStep).toFixed(3));
       if(target==='all')errorProfiles[topologyId]=stageErrors.map(()=>({gainError:draw(),nonlinearity:draw()}));
       else {currentErrors.gainError=draw();currentErrors.nonlinearity=draw();}
     }
   }
+  function snapshot():PipelineSnapshot {
+    // Validation also detaches the Svelte proxies before serializing a report.
+    return validateSnapshot({version:1,topologyId,input,errorStage:selectedStage,errorProfiles,randomState,mobileView})!;
+  }
+  function replayUrl(state:PipelineSnapshot):string {
+    const url=new URL(window.location.href);url.hash=replayHash(state);return url.href;
+  }
+  async function copyReplay(){
+    playing=false;const url=replayUrl(snapshot());replayFallback='';
+    try {await navigator.clipboard.writeText(url);replayStatus='Replay link copied. It restores this view and the next random sequence.';}
+    catch {replayFallback=url;replayStatus='Copy this link to restore the view.';}
+  }
+  function saveDiagnostic(){
+    playing=false;const state=snapshot();
+    const report={version:1,lesson:'pipeline-adc',capturedAt:new Date().toISOString(),build:__CLASSROOM_BUILD__,
+      replayUrl:replayUrl(state),state,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio},
+      userAgent:navigator.userAgent,errors:diagnostics?.issues.slice()??[]};
+    const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download='pipeline-diagnostic.json';link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    replayStatus='Report saved with a replay link, build version, viewport and browser errors.';
+  }
+  function restoreReplay(){
+    if(!window.location.hash.startsWith('#pipeline='))return;
+    const state=parseReplayHash(window.location.hash);
+    if(!state){replayWarning='Invalid replay link. Current settings were kept.';return;}
+    playing=false;topologyId=state.topologyId;input=state.input;errorStage=state.errorStage;
+    errorProfiles=state.errorProfiles;randomState=state.randomState;mobileView=state.mobileView;
+    replayWarning='';replayStatus='Replay restored. Sweep is paused at the saved input.';
+  }
   onMount(()=>{
+    diagnostics=captureBrowserIssues();
+    randomState=crypto.getRandomValues(new Uint32Array(1))[0];
+    restoreReplay();window.addEventListener('hashchange',restoreReplay);
     let frame=0,last=performance.now(),direction=1;
     const run=(now:number)=>{
       const dt=Math.min(.05,(now-last)/1000);last=now;
       if(playing){input=Math.min(1,Math.max(0,input+direction*dt/18));if(input===1)direction=-1;if(input===0)direction=1;}
       frame=requestAnimationFrame(run);
     };
-    frame=requestAnimationFrame(run);return()=>cancelAnimationFrame(frame);
+    frame=requestAnimationFrame(run);return()=>{
+      cancelAnimationFrame(frame);window.removeEventListener('hashchange',restoreReplay);diagnostics?.dispose();
+    };
   });
 </script>
 
@@ -68,6 +110,7 @@
       <button class="notes" aria-label="Model notes" title="Model notes" onclick={()=>notes?.showModal()}>ⓘ</button>
     </div>
     <div class="error-summary" aria-live="polite">{activeStages.length?`Errors active: ${activeStages.map(stage=>`S${stage}`).join(" · ")}`:"All stages ideal"}<span>Each stage keeps its own settings</span></div>
+    {#if replayWarning}<div class="replay-warning" role="status">{replayWarning}</div>{/if}
   </section>
   <div class="context">
     <div class="legend"><span class="actual"></span> Actual <span class="reference"></span> Ideal <span class="architecture-note">· {conversion.totalBits}-bit, nonredundant</span></div>
@@ -84,12 +127,21 @@
   <p>DNL[k] = (T[k + 1] − T[k]) / LSB − 1, with nominal LSB = 1 / {analysis.levels} V. It includes the measured widths of the first and last bins. A zero-width code has DNL = −1. INL uses a line through the first and last observed transitions, in fitted LSBs; unreachable transitions are omitted. {analysis.endpointCodes?`Current fit: transitions ${analysis.endpointCodes[0]}–${analysis.endpointCodes[1]}.`:''}</p>
   <p>Every stage is visible together. Each row enlarges the original-input interval selected by the preceding digital decisions. The horizontal axis is original Vin in every row, with explicitly different bounds. The highlighted interval expands into the next row; its displayed zoom ratio is a viewing scale, not the residue amplifier gain. Curves show actual residue after each amplifier, and the last row shows only the final flash digit. DNL and INL retain the full code range. Numerical extrema and the INL endpoint fit always use the full input range.</p>
   <p>This is a static, nonredundant pipeline model. Redundant decision stages, digital correction, settling and noise are not modeled.</p>
+  <div class="replay-tools" role="group" aria-label="Reproduce this view">
+    <button onclick={copyReplay}>Copy replay link</button>
+    <button onclick={saveDiagnostic}>Save diagnostic report</button>
+  </div>
+  <p class="replay-status" role="status">{replayStatus||'Save the current view to reproduce a problem or continue with the same settings.'}</p>
+  {#if replayFallback}<input class="replay-link" aria-label="Replay link" readonly value={replayFallback} onfocus={event=>event.currentTarget.select()}/>{/if}
 </dialog>
 
 <style>
   .pipeline-lab { height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:12px; padding:12px 24px; background:#fff; }
   .control-panel { display:grid; gap:10px; min-width:0; padding:10px 14px; border:1px solid #dbe4e8; border-radius:8px; background:#f5f8fa; }
   .error-summary { display:flex; justify-content:space-between; gap:12px; color:#976023; font:10px var(--mono); }.error-summary span { color:var(--ink-3); font-family:var(--sans); }
+  .replay-warning { font-size:11px; color:#976023; }
+  .replay-tools { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+  .replay-link { width:100%; box-sizing:border-box; margin-top:8px; }
   .lab-toolbar { display:grid; grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr) auto; align-items:center; gap:16px; }
   .architecture,.injection { display:flex; align-items:center; gap:8px; min-width:0; }.architecture>label { display:none; }
   label { font-size:11px; color:var(--ink-3); }

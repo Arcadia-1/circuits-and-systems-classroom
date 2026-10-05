@@ -16,8 +16,7 @@ on:
       - ".github/configure-pages-domain.py"
       - ".github/doc-postprocess.py"
       - ".github/toolbox-drift.py"
-  # ADCToolbox does not trigger this workflow, so pick up its main once a day: its manual gets rebuilt from there, and
-  # the functions the pages port are rerun against it
+  # Resolve upstream main once per run. Verify it and publish the manual from that exact revision.
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
@@ -30,7 +29,7 @@ jobs:
   site:
     needs: toolbox-drift
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
     defaults:
@@ -56,12 +55,29 @@ jobs:
 
       - run: pnpm build
 
-      # The reference manual keeps living in the ADCToolbox repository and its own Sphinx build; it is published here
-      # under /doc/ so the toolbox has one front door, with the illustrations at the root.
+      - name: Install Chromium for production browser regressions
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Test the production build in Chromium
+        run: pnpm test:browser
+
+      - name: Upload browser reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-regression-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # The drift job resolves upstream main and verifies this SHA before the site job starts.
       - name: Check out ADCToolbox for the reference manual
         uses: actions/checkout@v7
         with:
           repository: Arcadia-1/ADCToolbox
+          ref: ${{ needs.toolbox-drift.outputs.toolbox-sha }}
           path: toolbox
 
       - uses: actions/setup-python@v6
@@ -70,14 +86,63 @@ jobs:
           cache: pip
           cache-dependency-path: toolbox/python/pyproject.toml
 
-      - name: Build the reference manual
+      - name: Install reference manual tooling
         working-directory: .
         run: |
-          pip install --upgrade pip
-          pip install -e './toolbox/python[docs]'
-          python -m sphinx -b html toolbox/python/docs/source web/dist/doc
-          python -m sphinx -b html -D language=zh_CN toolbox/python/docs/source web/dist/doc/zh_CN
-          touch web/dist/doc/.nojekyll
+          python -m pip install --upgrade pip
+          python -m pip install -e './toolbox/python[docs]'
+
+      # Resolve packages before the cache lookup: upstream version ranges can select newer tooling without a source edit.
+      - name: Fingerprint the reference build environment
+        id: reference-environment
+        working-directory: .
+        run: |
+          python - <<'PY'
+          import hashlib
+          import importlib.metadata
+          import os
+          import platform
+
+          packages = sorted(f"{dist.metadata['Name'].lower()}=={dist.version}" for dist in importlib.metadata.distributions())
+          digest = hashlib.sha256("\n".join(packages).encode()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"identity=py{platform.python_version()}-{digest}", file=output)
+          PY
+
+      # Cache only raw Sphinx output. Exact keys prevent stale-source or cross-toolchain fallback restores.
+      - name: Restore the raw English and Chinese manual
+        id: reference-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/reference-manual
+          key: reference-manual-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.toolbox-drift.outputs.toolbox-sha }}-${{ steps.reference-environment.outputs.identity }}-${{ hashFiles('.github/workflows/deploy-web.yml', '.github/doc-postprocess.py') }}
+
+      - name: Build the raw English and Chinese manual
+        if: steps.reference-cache.outputs.cache-hit != 'true'
+        working-directory: .
+        run: |
+          python -m sphinx -b html toolbox/python/docs/source .cache/reference-manual
+          python -m sphinx -b html -D language=zh_CN toolbox/python/docs/source .cache/reference-manual/zh_CN
+          touch .cache/reference-manual/.nojekyll
+
+      - name: Validate the raw manual tree
+        working-directory: .
+        run: |
+          test -f .cache/reference-manual/index.html
+          test -f .cache/reference-manual/zh_CN/index.html
+
+      - name: Cache the raw manual before site postprocessing
+        if: steps.reference-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/reference-manual
+          key: ${{ steps.reference-cache.outputs.cache-primary-key }}
+
+      - name: Copy the raw manual into the site
+        working-directory: .
+        run: |
+          mkdir -p web/dist/doc
+          cp -a .cache/reference-manual/. web/dist/doc/
 
       # The manual used to be the whole of this domain, so every link into it still has to land.
       - name: Fold the manual into the site
@@ -112,6 +177,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      toolbox-sha: ${{ steps.toolbox-revision.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
 
@@ -119,7 +186,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Arcadia-1/ADCToolbox
+          ref: main
           path: toolbox
+
+      - name: Record the ADCToolbox revision under test
+        id: toolbox-revision
+        working-directory: toolbox
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v6
         with:
