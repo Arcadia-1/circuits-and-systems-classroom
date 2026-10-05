@@ -6,7 +6,7 @@
     detail?: string;
     color: string;
     xDomain: [number, number];
-    yDomain: [number, number];
+    yDomain: readonly [number, number];
     xLabel: string;
     yLabel: string;
     series: Series[];
@@ -72,8 +72,14 @@
   <div class="chart" bind:clientWidth={width} bind:clientHeight={height}>
     <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>{title}</title>
-      <desc id={`${id}-description`}>{xLabel}: {xDomain[0]} to {xDomain[1]}. {yLabel}: {yDomain[0]} to {yDomain[1]}.{detail ? ` ${detail}.` : ''}{markerVisible && marker ? ` Selected point: ${marker.x}, ${marker.y}.` : ''}</desc>
-      <defs><clipPath id={`${id}-clip`}><rect x={left - 1} y={top - 1} width={right - left + 2} height={bottom - top + 2} /></clipPath></defs>
+      <desc id={`${id}-description`}>{xLabel}: {xDomain[0]} to {xDomain[1]}. {yLabel}: {yDomain[0]} to {yDomain[1]}.{ghostPath ? ' Gray dashed: ideal. Colored solid: actual.' : ''}{detail ? ` ${detail}.` : ''}{markerVisible && marker ? ` Selected point: ${marker.x}, ${marker.y}.` : ''}</desc>
+      <defs>
+        <clipPath id={`${id}-clip`}><rect x={left - 1} y={top - 1} width={right - left + 2} height={bottom - top + 2} /></clipPath>
+        <!-- A screen-space mask keeps ideal dashes continuous across subpixel
+             quantization steps without connecting their discontinuities. -->
+        <pattern id={`${id}-ideal-dashes`} patternUnits="userSpaceOnUse" width="10" height="1"><rect width="6" height="1" fill="#fff" /></pattern>
+        <mask id={`${id}-ideal-mask`} maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}><rect width={w} height={h} fill={`url(#${id}-ideal-dashes)`} /></mask>
+      </defs>
 
       {#each yFractions as fraction}
         {@const value = yDomain[0] + fraction * ySpan}
@@ -92,7 +98,7 @@
 
       <g clip-path={`url(#${id}-clip)`}>
         {#if zero && yDomain[0] <= 0 && yDomain[1] >= 0}<line class="zero" x1={left} x2={right} y1={y(0)} y2={y(0)} />{/if}
-        {#if ghostPath}<path class="ghost-curve" d={ghostPath} />{/if}
+        {#if ghostPath}<path class="ghost-curve" d={ghostPath} mask={`url(#${id}-ideal-mask)`} />{/if}
         {#if actualPath}<path class="actual-curve" d={actualPath} />{/if}
         {#if vertical !== undefined && Number.isFinite(vertical)}<line class="cursor" x1={x(vertical)} x2={x(vertical)} y1={top} y2={bottom} />{/if}
         {#if markerVisible && marker}
@@ -127,7 +133,7 @@
   .axis-title { font-size: 9px; }
   .actual-curve, .ghost-curve { fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .actual-curve { stroke: var(--curve-color); stroke-width: 1.9; }
-  .ghost-curve { stroke: var(--ink-3, #71808e); opacity: .47; stroke-width: 1.1; stroke-dasharray: 4 3; }
+  .ghost-curve { stroke: #9aa5ae; opacity: .9; stroke-width: 3.2; }
   .cursor { stroke: var(--curve-color); stroke-width: 1; stroke-dasharray: 2 4; opacity: .55; }
   .marker-halo { fill: var(--plot, #fff); opacity: .92; }
   .marker { fill: var(--curve-color); }
@@ -141,7 +147,7 @@
   .compact .tick { font-size: 8px; }
   .compact .axis-title { font-size: 8px; }
   .compact .actual-curve { stroke-width: 1.6; }
-  .compact .ghost-curve { stroke-width: .9; }
+  .compact .ghost-curve { stroke-width: 3; }
   .compact .marker-label { font-size: 8.5px; }
   .tiny .detail { font-size: 7.5px; }
   .highlight { border-radius: 7px; outline: 1px solid color-mix(in srgb, var(--curve-color) 30%, transparent); outline-offset: -1px; background: color-mix(in srgb, var(--curve-color) 4%, var(--plot, #fff)); }

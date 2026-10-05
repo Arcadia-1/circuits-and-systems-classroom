@@ -1,6 +1,7 @@
 <script lang="ts">
   import { residueRamps } from './configurable';
   import { progressiveWindows } from './progressive';
+  import { VOLTAGE_DOMAIN } from './display';
   import { actualResidueCurves, normalizeErrorSettings, type PipelineErrorSettings, type ErrorConversion, type LinearityAnalysis, type ResiduePoint } from './errors';
 
   let { bits, settings, analysis, conversion }: {
@@ -11,7 +12,7 @@
   } = $props();
 
   type Domain = [number, number];
-  type Row = { key: string; domain: Domain; actual: ResiduePoint[][]; ideal: ResiduePoint[][]; maximum: number; flash: boolean; bits: number; color: string; injected: boolean; gainError: number; nonlinearity: number };
+  type Row = { key: string; domain: Domain; actual: ResiduePoint[][]; ideal: ResiduePoint[][]; yDomain: readonly [number, number]; flash: boolean; bits: number; color: string; injected: boolean; gainError: number; nonlinearity: number };
   const id = $props.id();
   let width = $state(860), height = $state(630);
   const w = $derived(Math.max(1, width)), h = $derived(Math.max(1, height));
@@ -25,7 +26,7 @@
   const rowTop = (index: number) => index * rowHeight;
   const chartTop = (index: number) => rowTop(index) + Math.min(6, rowHeight * 0.09);
   const chartBottom = (index: number) => Math.max(chartTop(index) + 1, rowTop(index + 1) - gap - tickBand);
-  const y = (value: number, index: number, maximum: number) => chartBottom(index) - value / maximum * (chartBottom(index) - chartTop(index));
+  const y = (value: number, index: number, domain: readonly [number, number]) => chartBottom(index) - (value - domain[0]) / (domain[1] - domain[0]) * (chartBottom(index) - chartTop(index));
   const format = (value: number) => String(Number(value.toPrecision(4)));
   const voltage = (value: number, span: number) => String(Number(value.toFixed(Math.min(9, Math.max(2, Math.ceil(-Math.log10(span / 4)) + 1)))));
   const windows = $derived(progressiveWindows(conversion, analysis));
@@ -45,7 +46,7 @@
     const error = stageErrors[index];
     const injected = error !== undefined && (error.gainError !== 0 || error.nonlinearity !== 0);
     const actual: ResiduePoint[][] = [], ideal: ResiduePoint[][] = [];
-    let maximum = flash ? 2 ** stageBits - 1 : 1;
+    const yDomain = flash ? [0, 2 ** stageBits - 1] as const : VOLTAGE_DOMAIN;
     if (flash) {
       const gain = 2 ** stageBits;
       for (let code = 0; code < analysis.levels; code++) {
@@ -60,10 +61,8 @@
     } else {
       actual.push(...actualResidueCurves(bits, settings, analysis, index, domain));
       for (const ramp of residueRamps(bits, index, domain)) ideal.push([{ x: ramp.x0, y: ramp.y0 }, { x: ramp.x1, y: ramp.y1 }]);
-      for (const segment of actual) for (const point of segment) maximum = Math.max(maximum, point.y);
-      maximum = Math.ceil((maximum - 1e-12) * 100) / 100;
     }
-    const row = { key, domain, actual, ideal, maximum, flash, bits: stageBits, injected, gainError: error?.gainError ?? 0, nonlinearity: error?.nonlinearity ?? 0, color: flash ? '#aa710c' : injected ? '#c46a29' : '#008b91' };
+    const row = { key, domain, actual, ideal, yDomain, flash, bits: stageBits, injected, gainError: error?.gainError ?? 0, nonlinearity: error?.nonlinearity ?? 0, color: flash ? '#aa710c' : injected ? '#c46a29' : '#008b91' };
     if (rowCache.size > 192) rowCache.clear();
     rowCache.set(key, row);
     return row;
@@ -75,7 +74,7 @@
       let start = true;
       for (const point of segment) {
         if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) { start = true; continue; }
-        commands.push(`${start ? 'M' : 'L'}${x(point.x, row.domain).toFixed(2)},${y(point.y, index, row.maximum).toFixed(2)}`);
+        commands.push(`${start ? 'M' : 'L'}${x(point.x, row.domain).toFixed(2)},${y(point.y, index, row.yDomain).toFixed(2)}`);
         start = false;
       }
     }
@@ -100,7 +99,7 @@
 <div class="shared-residues" class:narrow class:compressed bind:clientWidth={width} bind:clientHeight={height}>
   <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-labelledby={`${id}-title ${id}-description`}>
     <title id={`${id}-title`}>Progressive magnification through all {bits.length} pipeline stages</title>
-    <desc id={`${id}-description`}>Every row plots the original ADC input in volts. Each row expands the selected input interval in the row above; numerical axis limits show the magnification. Amplifier rows show residue volts; the final row shows the flash digit. Solid curves are actual, dashed curves ideal. Dots follow the same sample.</desc>
+    <desc id={`${id}-description`}>Every row plots the original ADC input in volts. Each row expands the selected input interval in the row above; numerical axis limits show the magnification. Amplifier rows have a fixed residue axis from -1.2 to 1.2 volts; the final row shows the flash digit on its code scale. Colored solid curves are actual, gray dashed curves ideal. Dots follow the same sample.</desc>
     <defs>
       {#each geometry as row, index}
         <clipPath id={`${id}-row-${index}`}><rect x={left - 1} y={chartTop(index) - 3} width={right - left + 2} height={Math.max(1, chartBottom(index) - chartTop(index) + 6)} /></clipPath>
@@ -113,16 +112,18 @@
       {@const interval = row.window.selected ?? row.domain}
       {@const rowSpan = row.domain[1] - row.domain[0]}
       {@const cursorX = boundedX(row.input, row.domain)}
+      {@const outside = value < row.yDomain[0] || value > row.yDomain[1]}
       {@const selectedLeft = boundedX(interval[0], row.domain)}
       {@const selectedRight = boundedX(interval[1], row.domain)}
       {#if row.injected}<rect class="injected-row" x="0" y={rowTop(index)} width={w} height={chartBottom(index) - rowTop(index) + 4} rx="4" />{/if}
-      <g role="group" aria-label={`Stage ${index + 1}, ${row.bits} bits. Original input range ${row.domain[0]} to ${row.domain[1]} volts. Sample ${row.input} volts; ${row.flash ? 'flash digit' : 'residue volts'} ${value}.${row.injected ? ` Gain error ${row.gainError} percent; nonlinearity ${row.nonlinearity} percent.` : ''}${row.window.boundaryOnly ? ' Boundary-only decision; finite ancestor context remains visible.' : ''}`}>
+      <g role="group" aria-label={`Stage ${index + 1}, ${row.bits} bits. Original input range ${row.domain[0]} to ${row.domain[1]} volts. ${row.flash ? `Flash digit axis 0 to ${row.yDomain[1]}.` : 'Residue axis -1.2 to 1.2 volts.'} Sample ${row.input} volts; ${row.flash ? 'flash digit' : 'residue volts'} ${value}.${row.injected ? ` Gain error ${row.gainError} percent; nonlinearity ${row.nonlinearity} percent.` : ''}${row.window.boundaryOnly ? ' Boundary-only decision; finite ancestor context remains visible.' : ''}`}>
         <title>Stage {index + 1}: {row.flash ? 'final flash digit' : 'residue'} versus original Vin, {row.domain[0]}–{row.domain[1]} V{row.injected ? ` · gain error ${row.gainError}% · nonlinearity ${row.nonlinearity}%` : ''}</title>
         <text class="stage-label" x={narrow ? 4 : 8} y={chartTop(index) + (chartBottom(index) - chartTop(index)) * 0.4} style:fill={row.color}>{narrow ? 'S' : 'Stage '}{index + 1}</text>
         <text class="stage-detail" x={narrow ? 4 : 8} y={chartTop(index) + (chartBottom(index) - chartTop(index)) * 0.4 + (compressed ? 10 : 14)}>{row.bits}b · {row.flash ? narrow ? 'digit' : 'Flash digit' : narrow ? 'V' : 'residue V'}</text>
-        <text class="y-tick" x={left - 7} y={chartTop(index)} dy=".32em" text-anchor="end">{format(row.maximum)}</text>
-        <text class="y-tick" x={left - 7} y={chartBottom(index)} dy=".32em" text-anchor="end">0</text>
-        <line class="baseline" x1={left} x2={right} y1={chartBottom(index)} y2={chartBottom(index)} />
+        <text class="y-tick" x={left - 7} y={chartTop(index)} dy=".32em" text-anchor="end">{row.flash ? format(row.yDomain[1]) : '+1.2'}</text>
+        <text class="y-tick" x={left - 7} y={chartBottom(index)} dy=".32em" text-anchor="end">{format(row.yDomain[0])}</text>
+        {#if !row.flash && chartBottom(index) - chartTop(index) >= 32}<text class="y-tick" x={left - 7} y={y(0,index,row.yDomain)} dy=".32em" text-anchor="end">0</text>{/if}
+        <line class="baseline" x1={left} x2={right} y1={y(0,index,row.yDomain)} y2={y(0,index,row.yDomain)} />
         {#each [0, 0.5, 1] as fraction}
           {@const v = row.domain[0] + fraction * rowSpan}
           <line class="grid" x1={x(v, row.domain)} x2={x(v, row.domain)} y1={chartTop(index)} y2={chartBottom(index)} />
@@ -136,8 +137,14 @@
           <path class="ideal" d={row.idealPath} />
           <path class="actual" style:stroke={row.color} d={row.actualPath} />
           <line class="cursor" x1={cursorX} x2={cursorX} y1={chartTop(index)} y2={chartBottom(index)} />
-          <circle class="dot-halo" cx={cursorX} cy={y(value, index, row.maximum)} r={compressed ? 3.8 : 5.2} />
-          <circle class="dot" style:fill={row.color} cx={cursorX} cy={y(value, index, row.maximum)} r={compressed ? 2.5 : 3.5} />
+          {#if outside}
+            {@const edge = value > row.yDomain[1] ? chartTop(index) : chartBottom(index)}
+            {@const inward = (value > row.yDomain[1] ? 1 : -1) * Math.min(6, (chartBottom(index) - chartTop(index)) / 2)}
+            <path class="overflow-marker" style:fill={row.color} d={`M${cursorX},${edge}L${cursorX - 4},${edge + inward}L${cursorX + 4},${edge + inward}Z`}><title>Actual residue {value} V is outside the fixed −1.2 to +1.2 V plot range.</title></path>
+          {:else}
+            <circle class="dot-halo" cx={cursorX} cy={y(value, index, row.yDomain)} r={compressed ? 3.8 : 5.2} />
+            <circle class="dot" style:fill={row.color} cx={cursorX} cy={y(value, index, row.yDomain)} r={compressed ? 2.5 : 3.5} />
+          {/if}
         </g>
       </g>
       {#if row.nextDomain}
@@ -179,7 +186,7 @@
   .axis-title { fill: #526574; font: 10px var(--mono, monospace); }
   .actual, .ideal { fill: none; stroke-linejoin: round; stroke-linecap: round; }
   .actual { stroke-width: 1.6; }
-  .ideal { stroke: #8f9eaa; stroke-width: 1; stroke-dasharray: 3 3; opacity: .48; }
+  .ideal { stroke: #9aa5ae; stroke-width: 3.2; stroke-dasharray: 6 4; opacity: .9; }
   .dot-halo { fill: #fff; fill-opacity: .94; }
   .compressed .stage-label { font-size: 10px; }
   .compressed .stage-detail, .compressed .y-tick, .compressed .x-tick, .compressed .zoom-label { font-size: 8px; }

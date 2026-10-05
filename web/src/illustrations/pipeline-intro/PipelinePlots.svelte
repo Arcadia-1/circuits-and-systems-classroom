@@ -1,7 +1,7 @@
 <script lang="ts">
   import CurvePanel from './CurvePanel.svelte';
   import { transferSteps } from './configurable';
-  import { linearityDomain } from './display';
+  import { linearityDomain, VOLTAGE_DOMAIN } from './display';
   import { type ErrorConversion, type PipelineErrorSettings, type LinearityAnalysis } from './errors';
   import SharedResidues from './SharedResidues.svelte';
   let { bits, settings, analysis, conversion, domain, mobileView }: {
@@ -20,15 +20,13 @@
   const inlMarker = $derived(analysis.endpointInl[inlCode] === null ? undefined : {x:inlCode,y:analysis.endpointInl[inlCode]!});
   const geometry = $derived.by(()=>{
     const transfer:Series[]=transferSteps(bits,domain).map(s=>({points:[{x:s.x0,y:s.y},{x:s.x1,y:s.y}],ghost:true}));
-    let low=domain[0],high=domain[1];
     for(let k=0;k<analysis.levels;k++){
       const x0=Math.max(domain[0],analysis.thresholds[k]),x1=Math.min(domain[1],analysis.thresholds[k+1]);
       if(x1<=x0)continue;
       const y=(k+.5)/analysis.levels;
-      transfer.push({points:[{x:x0,y},{x:x1,y}]});low=Math.min(low,y);high=Math.max(high,y);
+      transfer.push({points:[{x:x0,y},{x:x1,y}]});
     }
-    const pad=(high-low)*.04;
-    return {transfer,transferDomain:[low-pad,high+pad] as [number,number]};
+    return {transfer};
   });
   // Full-range linearity and endpoint fitting are independent of the input cursor and zoom.
   const linearity = $derived.by(()=>{
@@ -52,7 +50,7 @@
   <section class="linearity-section" aria-label="Overall converter performance">
     <CurvePanel title="DNL" detail={linearity.dnlDetail} color="#147a9c" xDomain={codeDomain} yDomain={linearity.dnlDomain} xLabel="Output code" yLabel="DNL · nominal LSB" series={linearity.dnl} marker={{x:conversion.code+.5,y:analysis.nominalDnl[conversion.code]}} vertical={conversion.code+.5}/>
     <CurvePanel title="INL · endpoint fit" detail={linearity.inlDetail} color="#b64e69" xDomain={codeDomain} yDomain={linearity.inlDomain} xLabel="Transition code" yLabel="INL · fitted LSB" series={linearity.inl} marker={inlMarker} vertical={inlCode}/>
-    <CurvePanel title="ADC transfer" color="#ad6b09" xDomain={domain} yDomain={geometry.transferDomain} xLabel="Original input · V" yLabel="Output · V" series={geometry.transfer} marker={{x:conversion.input,y:conversion.estimate}} vertical={conversion.input}/>
+    <CurvePanel title="ADC transfer" color="#ad6b09" xDomain={domain} yDomain={VOLTAGE_DOMAIN} xLabel="Original input · V" yLabel="Output · V" series={geometry.transfer} marker={{x:conversion.input,y:conversion.estimate}} vertical={conversion.input}/>
   </section>
 </div>
 <style>
