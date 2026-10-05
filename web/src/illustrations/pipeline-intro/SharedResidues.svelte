@@ -17,7 +17,7 @@
   let width = $state(860), height = $state(630);
   const w = $derived(Math.max(1, width)), h = $derived(Math.max(1, height));
   const narrow = $derived(w < 480);
-  const left = $derived(narrow ? 70 : 101);
+  const left = $derived(narrow ? 70 : 112);
   const right = $derived(Math.max(left + 1, w - (narrow ? 12 : 20)));
   const rowHeight = $derived(Math.max(bits.length, h - 20) / bits.length);
   const gap = $derived(Math.max(1, Math.min(26, rowHeight * (rowHeight < 42 ? 0.12 : 0.2))));
