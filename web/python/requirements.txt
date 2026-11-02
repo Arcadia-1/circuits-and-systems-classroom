@@ -1,3 +1,3 @@
 # Reference implementation used by the interactive lessons.
-# Includes the offset-spur correction that is not in the PyPI 0.9.1 release.
-adctoolbox @ git+https://github.com/Arcadia-1/ADCToolbox.git@8d62fb1863e38ffe5c6cc3ac48fa9c24d9df1ae9#subdirectory=python
+# Includes the offset-spur correction and the masked-lobe SFDR fix (#101), neither of which is in the PyPI 0.9.1 release.
+adctoolbox @ git+https://github.com/Arcadia-1/ADCToolbox.git@cd72061ff3b7a977163dac540da126ae22f5e38d#subdirectory=python
