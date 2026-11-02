@@ -1,6 +1,7 @@
 /**
- * ADCToolbox 0.9.1 analyze_spectrum (spectrum/compute_spectrum and spectrum/_window): the window, its power correction,
- * the side bins that count as signal, and the metrics built from them. Harmonics 2 … 5.
+ * ADCToolbox analyze_spectrum (spectrum/compute_spectrum and spectrum/_window) as of cd72061, 0.9.1 plus the masked-lobe
+ * SFDR fix of #101: the window, its power correction, the side bins that count as signal, and the metrics built from
+ * them. Harmonics 2 … 5.
  * Shared by the converter pages; python/sar_binary_vs_redundant.py checks the port against ADCToolbox itself.
  */
 import { fftAny } from './fft';
@@ -106,6 +107,24 @@ export function inbandBins(len: number, osr = 1): number {
 }
 
 /**
+ * _extract_highest_spur's masked-lobe compensation (ADCToolbox #100). The spur is summed over its side bins with DC,
+ * the signal band and the band edge zeroed, so a spur beside any of them loses part of its lobe and the SFDR reads up to
+ * 1.8 dB optimistic. When the lobe touches a mask or an edge, it is rebuilt from its centre bin with the lobe-to-peak
+ * ratio the fundamental shows, and the larger of the two estimates is kept. A fully visible lobe is left as summed.
+ * `spurEnd` and `signalEnd` are exclusive.
+ */
+export function completeMaskedLobe(
+  spurPower: number, spurPeak: number, signalPower: number, signalPeak: number,
+  spurStart: number, spurEnd: number, signalStart: number, signalEnd: number, sideBin: number, inband: number,
+): number {
+  const touchesEdge = spurStart === 0 || spurEnd === inband;
+  const touchesDc = spurStart < Math.min(sideBin, inband);
+  const touchesSignal = Math.max(spurStart, signalStart) < Math.min(spurEnd, signalEnd);
+  if (!(touchesEdge || touchesDc || touchesSignal) || signalPeak <= 0 || spurPeak <= 0) return spurPower;
+  return Math.max(spurPower, (spurPeak * signalPower) / signalPeak);
+}
+
+/**
  * analyze_spectrum: remove DC, normalise to full scale 2^N, window, one-sided power corrected by 4 / mean(window²).
  * The signal is the fundamental bin and `sides` bins either side of it; everything else in band is noise, and the
  * largest bin outside that band is the spur. The band runs to fs / (2·osr), all of the spectrum when osr is 1.
@@ -137,8 +156,10 @@ export function analyzeSpectrum(trace: Float64Array, n: number, kind: Window = '
     if (rest[k] > rest[spur]) spur = k;
   }
   // a windowed spur is spread over the same side bins as the signal, so it is measured over the same span
+  const spurStart = Math.max(spur - sideBin, 0), spurLast = Math.min(spur + sideBin, top);
   let spurPower = 0;
-  for (let k = Math.max(spur - sideBin, 0); k <= Math.min(spur + sideBin, top); k++) spurPower += rest[k];
+  for (let k = spurStart; k <= spurLast; k++) spurPower += rest[k];
+  spurPower = completeMaskedLobe(spurPower, rest[spur], signalPower, P[peakBin], spurStart, spurLast + 1, lo, hi + 1, sideBin, inband);
   const fold = (b: number) => (b % len > half ? len - (b % len) : b % len);
   const sndr = 10 * Math.log10(signalPower / (noise + 1e-20));
   return {

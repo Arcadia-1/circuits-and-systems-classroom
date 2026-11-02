@@ -9,9 +9,9 @@ describe('coherent sampling, windows and record length', () => {
   // [offset, then ENOB and SFDR for rectangular, hann, blackmanharris, flattop]
   const table: [number, ...number[]][] = [
     [0.0, 11.837, 93.34, 11.841, 92.11, 11.85, 89.85, 11.849, 87.98],
-    [0.1, 2.156, 19.08, 5.323, 35.59, 11.824, 86.98, 11.824, 88.99],
-    [0.25, 0.756, 9.54, 3.858, 25.68, 11.344, 73.01, 11.494, 75.67],
-    [0.5, -0.568, 0.0, 2.511, 16.99, 9.292, 57.84, 9.74, 60.7],
+    [0.1, 2.156, 19.08, 5.323, 34.0, 11.824, 84.23, 11.824, 83.46],
+    [0.25, 0.756, 9.54, 3.858, 23.75, 11.344, 69.8, 11.494, 69.93],
+    [0.5, -0.568, 0.0, 2.511, 13.98, 9.292, 53.99, 9.74, 54.92],
   ];
   it.each(table)('matches ADCToolbox at an offset of %f bin', (offset, ...cells) => {
     const n = 12, len = 4096, base = baseCycles(len);

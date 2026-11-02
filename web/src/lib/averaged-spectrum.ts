@@ -1,6 +1,7 @@
 /**
- * ADCToolbox 0.9.1 compute_spectrum over several runs of the same tone, as analyze_spectrum does it (power averaging)
- * and as analyze_spectrum_polar does it (coherent averaging, with the phase of every bin kept):
+ * ADCToolbox compute_spectrum (cd72061, 0.9.1 plus the masked-lobe SFDR fix of #101) over several runs of the same tone,
+ * as analyze_spectrum does it (power averaging) and as analyze_spectrum_polar does it (coherent averaging, with the phase
+ * of every bin kept):
  *   spectrum/_spectrum_averaging     _power_average, _coherent_average
  *   spectrum/_align_spectrum_phase   the rotation that puts every run's fundamental at phase 0
  *   spectrum/_harmonics              harmonic bins and their power, the largest spur
@@ -11,7 +12,7 @@
 import { fftAny } from './fft';
 import { foldBin } from './frequency';
 import { npSum, roundEven } from './numeric';
-import { autoSideBin, fractionalPeak, inbandBins, median, windowOf, type Window } from './spectrum';
+import { autoSideBin, completeMaskedLobe, fractionalPeak, inbandBins, median, windowOf, type Window } from './spectrum';
 
 export interface AveragedSpectrum {
   /** power per bin, 0 … n/2, and its dBFS */
@@ -176,7 +177,8 @@ export function averagedSpectrum(runs: Float64Array[], kind: Window, coherent: b
   const rest = Float64Array.from(power.subarray(0, inband), (v, k) => (k < sideBin || (k >= start && k < end) ? 0 : v));
   let spur = 0;
   for (let k = 1; k < inband; k++) if (rest[k] > rest[spur]) spur = k;
-  const spurPower = npSum(rest, Math.max(spur - sideBin, 0), Math.min(spur + sideBin + 1, inband));
+  const spurStart = Math.max(spur - sideBin, 0), spurEnd = Math.min(spur + sideBin + 1, inband);
+  const spurPower = completeMaskedLobe(npSum(rest, spurStart, spurEnd), rest[spur], sig, power[signal], spurStart, spurEnd, start, end, sideBin, inband);
 
   const sndr = 10 * Math.log10(sig / (npSum(rest) + 1e-20));
 

@@ -3,9 +3,9 @@ side bins counted as signal: rectangular 0, hann 1, blackmanharris 3, flattop 4
  offset |    rectangular |           hann | blackmanharris |        flattop
         |   ENOB    SFDR |   ENOB    SFDR |   ENOB    SFDR |   ENOB    SFDR
   0.00  | 11.837   93.34 | 11.841   92.11 | 11.850   89.85 | 11.849   87.98
-  0.10  |  2.156   19.08 |  5.323   35.59 | 11.824   86.98 | 11.824   88.99
-  0.25  |  0.756    9.54 |  3.858   25.68 | 11.344   73.01 | 11.494   75.67
-  0.50  | -0.568    0.00 |  2.511   16.99 |  9.292   57.84 |  9.740   60.70
+  0.10  |  2.156   19.08 |  5.323   34.00 | 11.824   84.23 | 11.824   83.46
+  0.25  |  0.756    9.54 |  3.858   23.75 | 11.344   69.80 | 11.494   69.93
+  0.50  | -0.568    0.00 |  2.511   13.98 |  9.292   53.99 |  9.740   54.92
 
 record length, coherent, rectangular window: the floor per bin drops but the total does not
      256 points,    39 cycles: ENOB 11.818  SFDR   83.35  noise floor   -74.01 dBFS
