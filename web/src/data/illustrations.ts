@@ -4,7 +4,7 @@ export interface Illustration {
   href: string;
   title: string;
   summary: string;
-  thumb: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
+  thumb: 'pll-intro' | 'bbpll' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
   /** Whose site this is, for a page that is not on this one; it opens in a tab of its own. */
   external?: string;
   /** Public catalog label; assigned only after a lesson passes the editorial gate. */
@@ -158,6 +158,13 @@ export const related: Topic = {
       title: 'Integer-N vs fractional-N',
       summary: 'See why integer-N lands on a channel grid and fractional-N does not.',
       thumb: 'pll',
+      category: 'PLL',
+    },
+    {
+      href: '/pll/bang-bang/',
+      title: 'Bang-bang PLL',
+      summary: 'A one-bit phase detector: watch the frequency slew, the limit cycle, and how jitter turns the sign into a gain.',
+      thumb: 'bbpll',
       category: 'PLL',
     },
     {

@@ -14,6 +14,7 @@ export const publicLessonPaths = [
   '/adc/analog-panel/',
   '/adc/time-interleaved-adcs/',
   '/pll/integer-vs-fractional/',
+  '/pll/bang-bang/',
   '/amplifiers/open-loop-and-closed-loop/',
   '/serdes/112g-pam4-link/',
   '/serdes/clock-and-data-recovery/',

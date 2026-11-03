@@ -1,6 +1,6 @@
 ---
 /** Small schematic previews for the home page. */
-interface Props { kind: 'pll-intro' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
+interface Props { kind: 'pll-intro' | 'bbpll' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
 const { kind } = Astro.props;
 const xs = Array.from({ length: 13 }, (_, i) => 6 + i * 14);
 const saw = [-14, -8, -2, 6, 14];
@@ -86,6 +86,10 @@ const pamSmeared = (() => {
 const pcieLanes = [34, 44, 54, 64];
 const cdrBits = [0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1];
 const cdrData = cdrBits.flatMap((b, i) => [`${4 + i * 14},${b ? 18 : 40}`, `${4 + (i + 1) * 14},${b ? 18 : 40}`]).join(' ');
+// a straight frequency ramp into a small limit cycle, and the one-bit decisions underneath
+const bbCycle = [0, -1, -2, -1, 0, 1];
+const bbTrace = ['4,14', '80,50', ...Array.from({ length: 22 }, (_, i) => `${80 + (i + 1) * 4.8},${50 + 4 * bbCycle[(i + 1) % 6]}`)].join(' ');
+const bbBits = Array.from({ length: 26 }, (_, i) => (i < 11 ? -1 : bbCycle[(i - 10) % 6] >= 0 ? 1 : -1));
 const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 14},${88}`, `${11 + i * 14},${66}`, `${18 + i * 14},${66}`]).join(' ');
 ---
 <svg class="thumb" viewBox="0 0 188 100" aria-hidden="true">
@@ -96,6 +100,13 @@ const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 1
       <path d="M83 39h5v-8h8v8h9" stroke="var(--s2)"/><path d="M135 39l5-8 5 8 5-8 5 8" stroke="var(--brand)"/>
       <path d="M39 29v14m8-14v14m-13-7h18" stroke="var(--s1)"/>
     </g>
+  ) : kind === 'bbpll' ? (
+    <>
+      <line class="base" x1="0" y1="50" x2="188" y2="50" />
+      <polyline class="s1 link" points={bbTrace} />
+      <line class="base" x1="0" y1="84" x2="188" y2="84" />
+      {bbBits.map((b, i) => <rect class={b > 0 ? 's2' : 's1'} x={4 + i * 7} y={b > 0 ? 76 : 84} width="4.5" height="8" rx="1" />)}
+    </>
   ) : kind === 'pipe-intro' ? (
     <g fill="none" stroke-width="2">
       <path d="M12 7v38h168M12 57v36h168" stroke="var(--rule)"/>
