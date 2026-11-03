@@ -1,0 +1,9 @@
+---
+import Base from '../../layouts/Base.astro';
+import BangBangPll from '../../illustrations/bbpll/BangBangPll.svelte';
+import '../../styles/illustration.css';
+import '../../styles/course.css';
+---
+<Base title="Bang-bang PLL" description="A digital PLL with a one-bit phase detector: slew-limited acquisition, the limit cycle, pull-in, and how jitter turns the sign into a gain.">
+  <BangBangPll client:load />
+</Base>

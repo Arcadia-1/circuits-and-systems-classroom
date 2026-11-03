@@ -96,6 +96,11 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
 - **Integer-N vs fractional-N PLL** at `/pll/integer-vs-fractional/`. A reference-rate time-domain simulation of two loops that
   share one reference, loop filter and VCO. The fractional-N divider is an accumulator, a MASH 1-1-1, or a MASH 1-1-1 with a
   DTC that has adjustable INL.
+- **Bang-bang PLL** at `/pll/bang-bang/`. A reference-rate digital PLL with a one-bit phase detector, a proportional and
+  integral step that act after a latency of D cycles, reference jitter and DCO white FM noise. A strip follows each decision
+  to the DCO; the plots show the slew-limited frequency ramp, the limit cycle of (2D + 1) steps, cycle slips beyond
+  pull-in, the erf detector characteristic that jitter creates, and rms jitter against the step size.
+  `python/pll_bang_bang.py` shares the noise generator and reproduces every run exactly.
 - **Binary vs redundant SAR ADC** at `/adc/binary-vs-redundant-sar/`. The SAR conversion, unit-capacitor mismatch, sine-fit weight
   calibration and spectrum analysis are ports of [ADCToolbox](https://github.com/Arcadia-1/ADCToolbox), checked against it to
   0.001 ENOB. The page steps through one conversion and compares the output spectra of both converters before and after
