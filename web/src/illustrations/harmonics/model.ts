@@ -149,13 +149,13 @@ export function decompose(signal: Float64Array, nHarmonics = 5, frequency?: numb
     lo = Math.min(lo, signal[i]);
     hi = Math.max(hi, signal[i]);
   }
-  const residualRms = Math.sqrt(sq / n) * 2 * Math.SQRT2, range = hi - lo;
+  const residualRms = Math.sqrt(sq / n), range = hi - lo;
 
   const magnitudes: number[] = [], phases: number[] = [], db: number[] = [];
   for (let h = 1; h <= nHarmonics; h++) {
     const a = coeffs[2 * h - 1], b = coeffs[2 * h];
     magnitudes.push(Math.hypot(a, b) * 2);
-    phases.push(Math.atan2(b, a));
+    phases.push(Math.atan2(-b, a));
     db.push(20 * Math.log10(Math.hypot(a, b) * 2 / range + 1e-20));
   }
   const first = phases[0];
@@ -169,7 +169,7 @@ export function decompose(signal: Float64Array, nHarmonics = 5, frequency?: numb
     db,
     phases,
     residualRms,
-    noiseDb: 20 * Math.log10(residualRms / range),
+    noiseDb: 20 * Math.log10(Math.max((residualRms * 2 * Math.SQRT2) / range, 1e-30)),
     frequency: freq,
     fundamental: Float64Array.from(fundamental, (v) => v + dc),
     harmonic,

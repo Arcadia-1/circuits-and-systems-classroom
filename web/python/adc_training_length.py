@@ -114,6 +114,12 @@ def row(values, fmt):
     return " ".join(format(v, fmt) for v in values)
 
 
+def own_row(values):
+    # An exact overfit on a 32-sample training capture leaves residual power at float64 machine precision (~1e-30),
+    # where LAPACK SVD rounding differs by ~0.1 bits across macOS Accelerate and Linux OpenBLAS.
+    return " ".join(f"{'>25':>8s}" if v > 25.0 else f"{v:8.4f}" for v in values)
+
+
 if __name__ == "__main__":
     warnings.simplefilter("ignore")
     print(f"a 16-bit SAR read {N_TEST} samples at bin {TEST_BIN}, its capacitors {SIGMA * 100:g} % off per unit, "
@@ -140,7 +146,7 @@ if __name__ == "__main__":
                 out.append(enob_of(tests[t] @ cal))
                 own.append(enob_of(bits @ cal))
             print(f"  {n:6d} " + row([np.min(out), np.median(out), np.max(out)], "8.4f")
-                  + "   " + row([np.min(own), np.median(own), np.max(own)], "8.4f"))
+                  + "   " + own_row([np.min(own), np.median(own), np.max(own)]))
         print()
 
     print("[chip 0 of the redundant array, before and after a calibration trained on 128 samples]")

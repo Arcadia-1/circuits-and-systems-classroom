@@ -1,5 +1,6 @@
 # Reference implementation used by the interactive lessons.
-# Pinned to ADCToolbox 0.9.3 plus PR #130 algorithm fixes (Chebyshev HD generation, sine-histogram INL normalization,
-# integrated-lobe SFDR ranking, averaging-aware median noise floor, converged fit_sine_4param / fit_static_nonlin,
-# windowed coherent averaging, and full-rate TI skew calibration).
-adctoolbox @ git+https://github.com/Arcadia-1/ADCToolbox.git@b96e033af30a49d87a29e3c8900cd19c61e6a8a3#subdirectory=python
+# Pinned to ADCToolbox 9340460 (0.9.3 plus PR #130 and PR #131 audit fixes:
+# centered bin random-noise AM/PM split, harmonic phase/RMS fix, 16-bit memory-effect fine quantization,
+# OSR sweep DC/Hann masking, non-integer radix guard, Nyquist parabolic-interpolation guard,
+# exact TI mismatch LS / FFT block skew inversion / Nyquist offset spur power / Farrow boundary order).
+adctoolbox @ git+https://github.com/Arcadia-1/ADCToolbox.git@9340460d483b76f420338a9fc1bad72f60329437#subdirectory=python

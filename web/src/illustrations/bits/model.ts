@@ -94,12 +94,18 @@ export function weightRadix(weights: ArrayLike<number>): Radix {
     const off = sig.map((w) => w * scale - roundEven(w * scale));
     return Math.sqrt(npSum(off.map((d) => d * d)) / sig.length);
   };
-  let wgtsca = 1 / sig[k], best = error(wgtsca);
-  const first = roundEven(sorted[0] * wgtsca);
-  const lo = Math.max(1, roundEven(first * 0.5)), hi = Math.max(lo, roundEven(first * 1.5));
-  for (let msb = lo; msb <= hi; msb++) {
-    const scale = msb / sorted[0], e = error(scale);
-    if (e < best) [best, wgtsca] = [e, scale];
+  let wgtsca = 1 / sig[k];
+  const wErr = error(wgtsca);
+  if (wErr > 1e-12) {
+    const first = roundEven(sorted[0] * wgtsca);
+    const radius = Math.min(Math.max(1, roundEven(first * 0.1)), 2048);
+    const lo = Math.max(1, first - radius), hi = Math.max(lo, first + radius);
+    let best = wErr, bestScale = wgtsca;
+    for (let msb = lo; msb <= hi; msb++) {
+      const scale = msb / sorted[0], e = error(scale);
+      if (e < best) [best, bestScale] = [e, scale];
+    }
+    if (best < 0.1) wgtsca = bestScale;
   }
   return { radix, wgtsca, effres: Math.log2(npSum(sig) / sig[k] + 1), significant: k + 1 };
 }

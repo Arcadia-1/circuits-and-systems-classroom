@@ -5,8 +5,8 @@ clean: HD2 none, HD3 none, 10 uV of noise
   decomposition, harmonics 1 ... 5
     magnitude 0.899999615 0.000000654 0.000001407 0.000001297 0.000000851
     dB          -0.0002 -122.7692 -116.1190 -116.8232 -120.4858
-    phase rad  0.000000 -0.858681  3.026113  0.196891  0.121544
-    residual rms 0.000056319, noise -84.0720 dB, fundamental at 0.096923828 of fs
+    phase rad  0.000000  0.858681 -3.026113 -0.196891 -0.121544
+    residual rms 0.000019912, noise -84.0720 dB, fundamental at 0.096923828 of fs
     polar agrees: True
     parts at 0, 1, 2, 100: fundamental 0.499971129 0.757388623 0.922251705 0.079137021
                            harmonics   0.000000452 0.000000504 -0.000000246 0.000000824
@@ -19,8 +19,8 @@ second: HD2 -60 dBc, HD3 none, 10 uV of noise
   decomposition, harmonics 1 ... 5
     magnitude 0.899998537 0.000899643 0.000001124 0.000001683 0.000001233
     dB          -0.0002  -60.0037 -118.0692 -114.5638 -117.2625
-    phase rad  0.000000  0.000718  0.955176  0.800220  2.660784
-    residual rms 0.000057056, noise -83.9591 dB, fundamental at 0.096923828 of fs
+    phase rad  0.000000 -0.000718 -0.955176 -0.800220 -2.660784
+    residual rms 0.000020172, noise -83.9591 dB, fundamental at 0.096923828 of fs
     polar agrees: True
     parts at 0, 1, 2, 100: fundamental 0.500420025 0.757837484 0.922701091 0.079588459
                            harmonics   -0.000449062 -0.000155989 0.000341277 0.000336638
@@ -33,8 +33,8 @@ third: HD2 none, HD3 -60 dBc, 10 uV of noise
   decomposition, harmonics 1 ... 5
     magnitude 0.900001059 0.000001017 0.000898854 0.000000235 0.000001287
     dB          -0.0091 -118.9466  -60.0201 -131.6775 -116.9027
-    phase rad  0.000000  0.662094  0.000423  2.206671 -3.133169
-    residual rms 0.000056810, noise -84.0054 dB, fundamental at 0.096923828 of fs
+    phase rad  0.000000 -0.662094 -0.000423 -2.206671  3.133169
+    residual rms 0.000020085, noise -84.0054 dB, fundamental at 0.096923828 of fs
     polar agrees: True
     parts at 0, 1, 2, 100: fundamental 0.499969350 0.757387532 0.922251602 0.079136607
                            harmonics   -0.000000275 -0.000435194 0.000220282 -0.000209420
@@ -47,8 +47,8 @@ both: HD2 -55 dBc, HD3 -65 dBc, 10 uV of noise
   decomposition, harmonics 1 ... 5
     magnitude 0.900000882 0.001600859 0.000505777 0.000001806 0.000001219
     dB          -0.0049  -55.0027  -65.0106 -113.9571 -117.3671
-    phase rad  0.000000  0.001087 -0.000483 -0.537230  1.602169
-    residual rms 0.000056814, noise -84.0006 dB, fundamental at 0.096923828 of fs
+    phase rad  0.000000 -0.001087  0.000483  0.537230 -1.602169
+    residual rms 0.000020087, noise -84.0006 dB, fundamental at 0.096923828 of fs
     polar agrees: True
     parts at 0, 1, 2, 100: fundamental 0.500768243 0.758186680 0.923051526 0.079937868
                            harmonics   -0.000800382 -0.000522296 0.000732781 0.000482245
@@ -61,8 +61,8 @@ buried: HD2 -70 dBc, HD3 -75 dBc, 200 uV of noise
   decomposition, harmonics 1 ... 5
     magnitude 0.900002591 0.000300117 0.000148675 0.000006317 0.000010522
     dB          -0.0090  -69.5481  -75.6492 -103.0841  -98.6519
-    phase rad  0.000000  0.055457  0.057117 -2.804534  2.214183
-    residual rms 0.000567177, noise -64.0195 dB, fundamental at 0.096923826 of fs
+    phase rad  0.000000 -0.055457 -0.057117  2.804534 -2.214183
+    residual rms 0.000200528, noise -64.0195 dB, fundamental at 0.096923826 of fs
     polar agrees: True
     parts at 0, 1, 2, 100: fundamental 0.500127535 0.757543669 0.922401472 0.079275641
                            harmonics   -0.000152782 -0.000126959 0.000138384 0.000079917

@@ -12,7 +12,7 @@ thermal: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone 
        0.0005   56.0737   56.0854   80.3448   9.0222   56.0746
         0.001   50.0533   50.0648   74.2943   8.0221   50.0540
   at 5e-05: SNDR 75.5410, SNR 75.5520, SFDR 99.3478, ENOB 12.2560, 12.2578 bits of SNR
-  error by phase: am 0.000003973 V, pm 0.000000000 V (0.000000000 rad), base 0.000053081 V
+  error by phase: am 0.000000000 V, pm 0.000004321 V (0.000009603 rad), base 0.000052284 V
   samples 0 ... 3, 100, 2047: 0.500000000 0.757324219 0.922302246 0.935302734 0.079101562 0.757446289
 
 quantiser: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone would allow
@@ -27,7 +27,7 @@ quantiser: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alon
            15   87.5246   87.5291  111.7949  14.2466   91.1548
            16   89.2709   89.2801  114.4728  14.5367   97.1754
   at 12: SNDR 73.0337, SNR 73.0376, SFDR 93.8802, ENOB 11.8395, 11.8401 bits of SNR
-  error by phase: am 0.000003995 V, pm 0.000000000 V (0.000000000 rad), base 0.000070904 V
+  error by phase: am 0.000004536 V, pm 0.000000000 V (0.000000000 rad), base 0.000070459 V
   samples 0 ... 3, 100, 2047: 0.500000000 0.757324219 0.922119141 0.935302734 0.079101562 0.757324219
 
 jitter: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone would allow
@@ -42,8 +42,8 @@ jitter: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone w
         5e-13   69.8013   69.8032   93.7005  11.3025   70.3284
         1e-12   63.9266   63.9288   87.8396  10.3267   64.3078
   at 1e-13: SNDR 81.0248, SNR 81.0313, SFDR 105.2814, ENOB 13.1669, 13.1680 bits of SNR
-  error by phase: am 0.000000000 V, pm 0.000026796 V (0.000059547 rad), base 0.000020991 V
-  jitter recovered from the pm noise: 97.7807 fs, set 100 fs
+  error by phase: am 0.000000000 V, pm 0.000026636 V (0.000059191 rad), base 0.000020544 V
+  jitter recovered from the pm noise: 97.1949 fs, set 100 fs
   samples 0 ... 3, 100, 2047: 0.500000000 0.757324219 0.922241211 0.935302734 0.079162598 0.757385254
 
 settling: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone would allow
@@ -56,20 +56,20 @@ settling: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone
           0.3   69.0706   79.3401   69.5012  11.1812       -
           0.5   64.5808   79.3182   64.7341  10.4353       -
   at 0.15: SNDR 74.2017, SNR 79.3553, SFDR 75.7861, ENOB 12.0335, 12.8896 bits of SNR
-  error by phase: am 0.000000000 V, pm 0.000055271 V (0.000122993 rad), base 0.000048033 V
+  error by phase: am 0.000000000 V, pm 0.000054657 V (0.000121626 rad), base 0.000000000 V
   samples 0 ... 3, 100, 2047: 0.500000000 0.755554199 0.920959473 0.935180664 0.080444336 0.758544922
 
 memory: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone would allow
-            0   72.3673   72.3720   93.2744  11.7288       -
-       0.0005   72.7441   72.7511   93.6767  11.7914       -
-        0.001   72.4337   72.4641   93.0303  11.7398       -
-        0.002   71.7848   71.8756   88.2514  11.6320       -
-        0.005   68.5326   68.7141   80.1096  11.0918       -
-        0.009   64.6922   64.9070   74.9583  10.4539       -
-         0.02   58.4589   58.6720   68.0895   9.4184       -
-  at 0.005: SNDR 68.5326, SNR 68.7141, SFDR 80.1096, ENOB 11.0918, 11.1219 bits of SNR
-  error by phase: am 0.000033309 V, pm 0.000000000 V (0.000000000 rad), base 0.000117293 V
-  samples 0 ... 3, 100, 2047: 0.500915527 0.759765625 0.925842285 0.939636230 0.080017090 0.761657715
+            0   83.8791   83.8895  107.6240  13.6410       -
+       0.0005   82.9527   83.0051  100.1181  13.4872       -
+        0.001   81.1516   81.2783   93.7115  13.1880       -
+        0.002   77.2842   77.4584   88.1724  12.5455       -
+        0.005   70.3713   70.5776   80.1860  11.3972       -
+        0.009   65.4285   65.6317   74.8904  10.5762       -
+         0.02   58.6375   58.8474   68.0142   9.4481       -
+  at 0.005: SNDR 70.3713, SNR 70.5776, SFDR 80.1860, ENOB 11.3972, 11.4315 bits of SNR
+  error by phase: am 0.000000000 V, pm 0.000042116 V (0.000093206 rad), base 0.000061353 V
+  samples 0 ... 3, 100, 2047: 0.500915527 0.759887695 0.926025391 0.939636230 0.080078125 0.761779785
 
 interferer: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alone would allow
             0   84.0633   84.0699  107.7721  13.6717       -
@@ -80,7 +80,7 @@ interferer: strength, then SNDR, SNR, SFDR, ENOB, and the SNR the impairment alo
          0.01   43.0089   43.0089   46.0189   6.8520       -
          0.03   33.4677   33.4677   36.4775   5.2671       -
   at 0.003: SNDR 53.4667, SNR 53.4667, SFDR 56.4733, ENOB 8.5892, 8.5892 bits of SNR
-  error by phase: am 0.000954523 V, pm 0.000000000 V (0.000000000 rad), base 0.000013706 V
+  error by phase: am 0.000954011 V, pm 0.000000000 V (0.000000000 rad), base 0.000013971 V
   samples 0 ... 3, 100, 2047: 0.500000000 0.757446289 0.922424316 0.935546875 0.079101562 0.757446289
 
 jitter recovered across the sweep, fs: set, then recovered
@@ -88,12 +88,12 @@ jitter recovered across the sweep, fs: set, then recovered
        2.0000      0.0000
        5.0000      0.0000
       10.0000      0.0000
-      20.0000     13.1735
-      50.0000     48.7775
-     100.0000     97.7807
-     200.0000    206.0240
-     500.0000    519.0059
-    1000.0000   1032.7283
+      20.0000     14.3993
+      50.0000     49.2305
+     100.0000     97.1949
+     200.0000    204.0124
+     500.0000    512.6265
+    1000.0000   1021.0192
 
 the limits against input frequency: fin MHz, jitter 100 fs, thermal 50 uV, 12 bits
     10.009766  104.0279   76.0746   73.0930

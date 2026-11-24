@@ -15,6 +15,7 @@
  */
 import { fftAny } from '../../lib/fft';
 import { coherentFrequency, foldFrequency } from '../../lib/frequency';
+import { solve } from '../../lib/numeric';
 import { gaussians } from '../../lib/rng';
 import { analyzeSpectrum, N_FFT, type Spectrum } from '../../lib/spectrum';
 import { fitSine } from '../errors/model';
@@ -221,24 +222,28 @@ export function unwrap(p: ArrayLike<number>): Float64Array {
 }
 
 /**
- * extract_mismatch_sine: each channel's mean is its offset, and its samples, taken at (k·m + c)/fs, give a phasor at
- * the known tone. The phasors' sizes are the gains, normalised to a mean of one; their phases, less the mean, are the
- * skews, since the channel's own place in the turn is already in the sample times.
+ * extract_mismatch_sine: per-channel 3-parameter linear least squares [cos(wt), -sin(wt), 1] at sample times
+ * (k·m + c)/fs. Exact for both coherent and non-coherent captures (no single-bin DFT leakage between DC and tone).
  */
 export function extractMismatch(x: Float64Array, m: number, fs: number, fin: number): Params {
   const T = 1 / fs;
   const offset = new Float64Array(m), amps = new Float64Array(m), phases = new Float64Array(m);
   deinterleave(x, m).forEach((y, c) => {
-    const K = y.length, off = mean(y);
-    let re = 0, im = 0;
+    const K = y.length;
+    const mat = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], rhs = [0, 0, 0];
     for (let k = 0; k < K; k++) {
       const th = 2 * Math.PI * fin * ((k * m + c) * T);
-      re += (y[k] - off) * Math.cos(th);
-      im -= (y[k] - off) * Math.sin(th);
+      const v = [Math.cos(th), -Math.sin(th), 1];
+      for (let p = 0; p < 3; p++) {
+        for (let q = p; q < 3; q++) mat[p][q] += v[p] * v[q];
+        rhs[p] += v[p] * y[k];
+      }
     }
+    for (let p = 0; p < 3; p++) for (let q = 0; q < p; q++) mat[p][q] = mat[q][p];
+    const [a, b, off] = solve(mat, rhs);
     offset[c] = off;
-    amps[c] = Math.hypot((2 / K) * re, (2 / K) * im);
-    phases[c] = Math.atan2((2 / K) * im, (2 / K) * re);
+    amps[c] = Math.hypot(a, b);
+    phases[c] = Math.atan2(b, a);
   });
   const amp = mean(amps), unwrapped = unwrap(phases), mid = mean(unwrapped);
   return {
@@ -274,20 +279,23 @@ function dft(re: ArrayLike<number>, im: ArrayLike<number>): Float64Array {
  */
 export function predictSpurs(p: Params, fs: number, fullScale = 1): Spur[] {
   const m = p.gain.length;
-  const fund = 20 * Math.log10(Math.max((p.amp * mean(p.gain)) / fullScale, 1e-300));
-  const db = (amp: number) => {
-    const dbfs = amp > 0 ? 20 * Math.log10(amp / fullScale) : -Infinity;
+  const re = p.gain.map((g, c) => g * Math.cos(2 * Math.PI * p.fin * p.skew[c]));
+  const im = p.gain.map((g, c) => g * Math.sin(2 * Math.PI * p.fin * p.skew[c]));
+  const reMean = mean(re), imMean = mean(im);
+  const fund = 20 * Math.log10(Math.max((p.amp * Math.hypot(reMean, imMean)) / fullScale, 1e-300));
+  const db = (amp: number, isNyquistReal = false) => {
+    if (amp <= 0) return { dbfs: -Infinity, dbc: -Infinity };
+    const equiv = isNyquistReal ? amp * Math.SQRT2 : amp;
+    const dbfs = 20 * Math.log10(equiv / fullScale);
     return { dbfs, dbc: dbfs - fund };
   };
   const spurs: Spur[] = [];
   const O = dft(p.offset, new Float64Array(m));
   for (let k = 1; k <= m / 2; k++) {
-    const amp = (O[k] / m) * (2 * k === m ? 1 : 2);
-    spurs.push({ freq: foldFrequency((k * fs) / m, fs), kind: 'offset', k, amp, ...db(amp) });
+    const isNyq = 2 * k === m;
+    const amp = (O[k] / m) * (isNyq ? 1 : 2);
+    spurs.push({ freq: foldFrequency((k * fs) / m, fs), kind: 'offset', k, amp, ...db(amp, isNyq) });
   }
-  const re = p.gain.map((g, c) => g * Math.cos(2 * Math.PI * p.fin * p.skew[c]));
-  const im = p.gain.map((g, c) => g * Math.sin(2 * Math.PI * p.fin * p.skew[c]));
-  const reMean = mean(re), imMean = mean(im);
   const G = dft(re.map((v) => v - reMean), im.map((v) => v - imMean));
   for (let k = 1; k < m; k++) {
     const amp = (p.amp * G[k]) / m;
@@ -337,63 +345,185 @@ export function lagrangeTaps(frac: number, taps: number): Float64Array {
 }
 
 /**
- * fractional_delay_farrow: the whole samples of the delay by a shift that fills with zeros, the rest by the Lagrange
- * interpolator, convolved as np.convolve(mode='same') does, with zeros beyond both ends.
+ * fractional_delay_farrow: convolve with the centered Lagrange taps BEFORE shifting by the integer part so boundary
+ * samples stay continuous across half-integer delays.
  */
 export function delayFarrow(x: Float64Array, delay: number, fs: number, taps = TAPS): Float64Array {
   const n = x.length, d = delay * fs, whole = roundEven(d), P = Math.floor(taps / 2);
   const h = lagrangeTaps(d - whole, taps);
-  const y = Float64Array.from({ length: n }, (_, i) => (i - whole >= 0 && i - whole < n ? x[i - whole] : 0));
-  return Float64Array.from({ length: n }, (_, i) => {
-    let s = 0;
-    for (let k = 0; k < taps; k++) {
-      const j = i + P - k;
-      if (j >= 0 && j < n) s += y[j] * h[k];
-    }
-    return s;
-  });
+  const fullLen = n + taps - 1;
+  const full = new Float64Array(fullLen);
+  for (let i = 0; i < n; i++) {
+    const xi = x[i];
+    for (let k = 0; k < taps; k++) full[i + k] += xi * h[k];
+  }
+  const out = new Float64Array(n);
+  const nStart = Math.max(0, whole - P);
+  const nEnd = Math.min(n, fullLen + whole - P);
+  for (let i = nStart; i < nEnd; i++) out[i] = full[i - whole + P];
+  return out;
 }
 
-const MAX_SKEW_PASSES = 12;
 const FARROW_SKEW_PASSES = 3;
 const SKEW_RESIDUAL_TOLERANCE = 1e-14;
 
+/** Solve A z = b for a small M × M complex linear system using partial-pivoting Gaussian elimination. */
+function solveComplex(ar: Float64Array[], ai: Float64Array[], br: Float64Array, bi: Float64Array): [Float64Array, Float64Array] {
+  const m = br.length;
+  const mr = ar.map((row) => Float64Array.from(row));
+  const mi = ai.map((row) => Float64Array.from(row));
+  const xr = Float64Array.from(br);
+  const xi = Float64Array.from(bi);
+  for (let col = 0; col < m; col++) {
+    let pivot = col, best = mr[col][col] ** 2 + mi[col][col] ** 2;
+    for (let row = col + 1; row < m; row++) {
+      const mag2 = mr[row][col] ** 2 + mi[row][col] ** 2;
+      if (mag2 > best) {
+        best = mag2;
+        pivot = row;
+      }
+    }
+    if (pivot !== col) {
+      [mr[col], mr[pivot]] = [mr[pivot], mr[col]];
+      [mi[col], mi[pivot]] = [mi[pivot], mi[col]];
+      [xr[col], xr[pivot]] = [xr[pivot], xr[col]];
+      [xi[col], xi[pivot]] = [xi[pivot], xi[col]];
+    }
+    const pr = mr[col][col], pi = mi[col][col], denom = pr * pr + pi * pi;
+    if (denom === 0) continue;
+    for (let row = col + 1; row < m; row++) {
+      const nr = mr[row][col], ni = mi[row][col];
+      const fr = (nr * pr + ni * pi) / denom;
+      const fi = (ni * pr - nr * pi) / denom;
+      for (let j = col; j < m; j++) {
+        mr[row][j] -= fr * mr[col][j] - fi * mi[col][j];
+        mi[row][j] -= fr * mi[col][j] + fi * mr[col][j];
+      }
+      xr[row] -= fr * xr[col] - fi * xi[col];
+      xi[row] -= fr * xi[col] + fi * xr[col];
+    }
+  }
+  const zr = new Float64Array(m), zi = new Float64Array(m);
+  for (let row = m - 1; row >= 0; row--) {
+    let sr = xr[row], si = xi[row];
+    for (let j = row + 1; j < m; j++) {
+      sr -= mr[row][j] * zr[j] - mi[row][j] * zi[j];
+      si -= mr[row][j] * zi[j] + mi[row][j] * zr[j];
+    }
+    const pr = mr[row][row], pi = mi[row][row], denom = pr * pr + pi * pi;
+    if (denom === 0) continue;
+    zr[row] = (sr * pr + si * pi) / denom;
+    zi[row] = (si * pr - sr * pi) / denom;
+  }
+  return [zr, zi];
+}
+
 /**
- * calibrate_foreground (ADCToolbox PR #130): offset out first, then the gain, then skew inverted on the interleaved
- * full-rate stream via fixed-point iteration z <- z + (y - A z), where A resamples z on the skewed channel grid.
- * Operating at fs (instead of each sub-ADC's fs/m) works across the whole first Nyquist zone 0 … fs/2.
+ * calibrate_foreground: offset out first, then gain, then skew inverted on the interleaved full-rate stream.
+ * For `fft`, solve the K independent M × M frequency-domain coupling blocks directly (exact at arbitrary skew).
+ * For `farrow`, run fixed-point iteration z <- z + (y - A z) with a monotonic residual guard.
  */
 export function calibrate(x: Float64Array, m: number, p: Params, fs: number, method: Exclude<Method, 'off'>, taps = TAPS): Float64Array {
   const channels = deinterleave(x, m).map((ch, c) => ch.map((v) => (v - p.offset[c]) / p.gain[c]));
   const corrected = interleave(channels);
   const active: number[] = [];
   for (let c = 0; c < m; c++) if (Math.abs(p.skew[c]) >= 1e-18) active.push(c);
-  if (!active.length) return corrected;
-
-  const advance = (stream: Float64Array, seconds: number) =>
-    method === 'fft' ? delayFft(stream, -seconds, fs) : delayFarrow(stream, -seconds, fs, taps);
-  const maxPasses = method === 'fft' ? MAX_SKEW_PASSES : FARROW_SKEW_PASSES;
+  if (!active.length || p.fin > fs / 2) return corrected;
 
   const n = corrected.length;
-  const estimate = corrected.slice();
-  let scale = 0;
-  for (let i = 0; i < n; i++) scale = Math.max(scale, Math.abs(corrected[i]));
+  if (method === 'fft') {
+    const K = n / m;
+    const yr = Float64Array.from(corrected), yi = new Float64Array(n);
+    fftAny(yr, yi);
+    // Precompute W[p][q][c] = exp(-j 2 pi (p - q) c / m) / m
+    const wr: Float64Array[][] = Array.from({ length: m }, (_, pIdx) =>
+      Array.from({ length: m }, (_, qIdx) => Float64Array.from({ length: m }, (_, c) => Math.cos((-2 * Math.PI * (pIdx - qIdx) * c) / m) / m)),
+    );
+    const wi: Float64Array[][] = Array.from({ length: m }, (_, pIdx) =>
+      Array.from({ length: m }, (_, qIdx) => Float64Array.from({ length: m }, (_, c) => Math.sin((-2 * Math.PI * (pIdx - qIdx) * c) / m) / m)),
+    );
+    const zrFull = new Float64Array(n), ziFull = new Float64Array(n);
+    const hr = Array.from({ length: m }, () => new Float64Array(m));
+    const hi = Array.from({ length: m }, () => new Float64Array(m));
+    const rhsR = new Float64Array(m), rhsI = new Float64Array(m);
+    const phiR = Array.from({ length: m }, () => new Float64Array(m));
+    const phiI = Array.from({ length: m }, () => new Float64Array(m));
+    const nyqIdx = n % 2 === 0 ? n / 2 : -1;
 
-  for (let pass = 0; pass < maxPasses; pass++) {
-    const skewed = estimate.slice();
+    for (let r = 0; r < K; r++) {
+      for (let q = 0; q < m; q++) {
+        const idx = q * K + r;
+        rhsR[q] = yr[idx];
+        rhsI[q] = yi[idx];
+        const freq = (idx <= Math.floor((n - 1) / 2) ? idx : idx - n) * (fs / n);
+        for (let c = 0; c < m; c++) {
+          if (idx === nyqIdx) {
+            phiR[q][c] = Math.cos(Math.PI * fs * p.skew[c]);
+            phiI[q][c] = 0;
+          } else {
+            const th = 2 * Math.PI * p.skew[c] * freq;
+            phiR[q][c] = Math.cos(th);
+            phiI[q][c] = Math.sin(th);
+          }
+        }
+      }
+      for (let pIdx = 0; pIdx < m; pIdx++) {
+        for (let qIdx = 0; qIdx < m; qIdx++) {
+          let sr = 0, si = 0;
+          const wrpq = wr[pIdx][qIdx], wipq = wi[pIdx][qIdx], pr = phiR[qIdx], pi = phiI[qIdx];
+          for (let c = 0; c < m; c++) {
+            sr += wrpq[c] * pr[c] - wipq[c] * pi[c];
+            si += wrpq[c] * pi[c] + wipq[c] * pr[c];
+          }
+          hr[pIdx][qIdx] = sr;
+          hi[pIdx][qIdx] = si;
+        }
+      }
+      const [zbR, zbI] = solveComplex(hr, hi, rhsR, rhsI);
+      for (let q = 0; q < m; q++) {
+        const idx = q * K + r;
+        zrFull[idx] = zbR[q];
+        ziFull[idx] = zbI[q];
+      }
+    }
+    // Inverse FFT: forward FFT read backwards divided by n
+    fftAny(zrFull, ziFull);
+    return Float64Array.from({ length: n }, (_, j) => zrFull[(n - j) % n] / n);
+  }
+
+  const resample = (stream: Float64Array) => {
+    const skewed = stream.slice();
     for (const c of active) {
-      const shifted = advance(estimate, p.skew[c]);
+      const shifted = delayFarrow(stream, -p.skew[c], fs, taps);
       for (let i = c; i < n; i += m) skewed[i] = shifted[i];
     }
+    return skewed;
+  };
+  let estimate = corrected.slice(), bestEstimate = corrected.slice();
+  let scale = 0, bestResNorm = Infinity;
+  for (let i = 0; i < n; i++) scale = Math.max(scale, Math.abs(corrected[i]));
+
+  for (let pass = 0; pass < FARROW_SKEW_PASSES; pass++) {
+    const skewed = resample(estimate);
     let maxRes = 0;
+    const residual = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      const r = corrected[i] - skewed[i];
-      estimate[i] += r;
-      maxRes = Math.max(maxRes, Math.abs(r));
+      residual[i] = corrected[i] - skewed[i];
+      maxRes = Math.max(maxRes, Math.abs(residual[i]));
     }
+    if (maxRes < bestResNorm) {
+      bestResNorm = maxRes;
+      bestEstimate = estimate.slice();
+    } else {
+      return bestEstimate;
+    }
+    for (let i = 0; i < n; i++) estimate[i] += residual[i];
     if (maxRes <= SKEW_RESIDUAL_TOLERANCE * scale) break;
   }
-  return estimate;
+  const finalSkewed = resample(estimate);
+  let finalRes = 0;
+  for (let i = 0; i < n; i++) finalRes = Math.max(finalRes, Math.abs(corrected[i] - finalSkewed[i]));
+  return finalRes <= bestResNorm ? estimate : bestEstimate;
 }
 
 /** analyze_spectrum on the ±0.5 V range: codes of the same resolution scale it to the full scale the port expects. */
@@ -467,14 +597,8 @@ export function outputSpurs(p: Params, fs: number, factor = 1): Spur[] {
   const take = (x: Float64Array) => Float64Array.from(channels, (c) => x[c]);
   const sampled = { ...p, gain: take(p.gain), offset: take(p.offset), skew: take(p.skew) };
   const fsOut = fs / factor;
-  const real = mean(sampled.gain.map((g, c) => g * Math.cos(2 * Math.PI * p.fin * sampled.skew[c])));
-  const imag = mean(sampled.gain.map((g, c) => g * Math.sin(2 * Math.PI * p.fin * sampled.skew[c])));
-  const carrierDbfs = 20 * Math.log10(p.amp * Math.hypot(real, imag) / 0.5);
-  return predictSpurs(sampled, fsOut, 0.5).filter((s) => s.amp > 1e-14).map((s) => {
-    // A Nyquist tone has twice the power of an interior sinusoid with the same peak amplitude.
-    const dbfs = s.dbfs + (Math.abs(s.freq - fsOut / 2) < fsOut * 1e-12 ? 10 * Math.log10(2) : 0);
-    return { ...s, dbfs, dbc: dbfs - carrierDbfs };
-  });
+  // predictSpurs already applies |mean(alpha)| for carrier reference and sqrt(2) for real Nyquist offset tones.
+  return predictSpurs(sampled, fsOut, 0.5).filter((s) => s.amp > 1e-14);
 }
 
 /** Active source harmonics, folded into the output Nyquist band. */

@@ -119,11 +119,12 @@ export function fitSine(y: Float64Array, bin: number, iterations = 0, tolerance 
 
   for (let it = 1; it <= iterations; it++) {
     const w = 2 * Math.PI * freq;
-    // the refinement column is scaled by 1 / n to keep the normal system conditioned
+    // normalize the refinement column by n * hypot(a, b) so the normal system stays conditioned at large A * n^2
+    const colScale = Math.max(n * Math.hypot(a, b), 1);
     const m = Array.from({ length: 4 }, () => [0, 0, 0, 0]), r = [0, 0, 0, 0];
     for (let i = 0; i < n; i++) {
       const c = Math.cos(w * i), s = Math.sin(w * i);
-      const v = [c, s, 1, (i / n) * (-a * s + b * c)];
+      const v = [c, s, 1, (i / colScale) * (-a * s + b * c)];
       for (let p = 0; p < 4; p++) {
         for (let q = p; q < 4; q++) m[p][q] += v[p] * v[q];
         r[p] += v[p] * y[i];
@@ -132,7 +133,7 @@ export function fitSine(y: Float64Array, bin: number, iterations = 0, tolerance 
     for (let p = 0; p < 4; p++) for (let q = 0; q < p; q++) m[p][q] = m[q][p];
     const coeffs = solve(m, r);
     [a, b, dc] = coeffs;
-    const delta = coeffs[3] / n / (2 * Math.PI);
+    const delta = coeffs[3] / colScale / (2 * Math.PI);
     nIter++;
     freq += delta;
     if (!(freq > 1e-10 && freq < 0.5 - 1e-10)) {
@@ -169,17 +170,26 @@ export interface Bins {
 function bin(index: (i: number) => number, error: Float64Array, centers: Float64Array): Bins {
   const k = centers.length;
   const counts = new Float64Array(k), sum = new Float64Array(k), sq = new Float64Array(k);
+  const idx = new Int32Array(error.length);
   for (let i = 0; i < error.length; i++) {
     const b = index(i);
+    idx[i] = b;
     if (b < 0 || b >= k) continue;
     counts[b]++;
     sum[b] += error[i];
-    sq[b] += error[i] * error[i];
+  }
+  const mean = sum.map((v, b) => (counts[b] ? v / counts[b] : NaN));
+  // RMS around each bin's deterministic mean (separates random noise from static/harmonic curvature)
+  for (let i = 0; i < error.length; i++) {
+    const b = idx[i];
+    if (b < 0 || b >= k) continue;
+    const d = error[i] - mean[b];
+    sq[b] += d * d;
   }
   return {
     centers,
     counts,
-    mean: sum.map((v, b) => (counts[b] ? v / counts[b] : NaN)),
+    mean,
     rms: sq.map((v, b) => (counts[b] ? Math.sqrt(v / counts[b]) : NaN)),
   };
 }
@@ -213,10 +223,14 @@ export function byPhase(error: Float64Array, bin_: number, phase: number, k = 96
     return p < 0 ? p + 2 * Math.PI : p;
   };
   const centers = Float64Array.from({ length: k }, (_, b) => ((b + 0.5) * 2 * Math.PI) / k);
-  const out = bin((i) => Math.floor((phi(i) / (2 * Math.PI)) * k), error, centers);
+  const binOf = (i: number) => Math.min(k - 1, Math.max(0, Math.floor((phi(i) / (2 * Math.PI)) * k)));
+  const out = bin(binOf, error, centers);
   let cc = 0, c1 = 0, ec = 0, e1 = 0;
   for (let i = 0; i < error.length; i++) {
-    const c = Math.cos(2 * phi(i)), e = error[i] * error[i];
+    const b = binOf(i);
+    const mean = Number.isFinite(out.mean[b]) ? out.mean[b] : 0;
+    const rand = error[i] - mean;
+    const c = Math.cos(2 * phi(i)), e = rand * rand;
     cc += c * c;
     c1 += c;
     ec += e * c;
