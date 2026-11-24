@@ -81,47 +81,82 @@ export interface Fit {
   frequency: number;
 }
 
+function solveThreeParam(y: Float64Array, freq: number): { a: number; b: number; dc: number; fitted: Float64Array; sse: number } {
+  const n = y.length, w = 2 * Math.PI * freq;
+  const m = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], r = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    const c = Math.cos(w * i), s = Math.sin(w * i);
+    const v = [c, s, 1];
+    for (let p = 0; p < 3; p++) {
+      for (let q = p; q < 3; q++) m[p][q] += v[p] * v[q];
+      r[p] += v[p] * y[i];
+    }
+  }
+  for (let p = 0; p < 3; p++) for (let q = 0; q < p; q++) m[p][q] = m[q][p];
+  const [a, b, dc] = solve(m, r);
+  const fitted = new Float64Array(n);
+  let sse = 0;
+  for (let i = 0; i < n; i++) {
+    fitted[i] = a * Math.cos(w * i) + b * Math.sin(w * i) + dc;
+    const e = y[i] - fitted[i];
+    sse += e * e;
+  }
+  return { a, b, dc, fitted, sse };
+}
+
 /**
- * fit_sine_4param: least squares for A cos(wt) + B sin(wt) + C, a 3 × 3 normal system at the frequency it is given.
- * With `iterations` above 0 it then refines the frequency itself, as the library's 4-parameter fit does: a fourth
- * column for t · d/dw of the fit turns the residual left by a slightly wrong frequency into a correction to it.
+ * fit_sine_4param (ADCToolbox PR #130): least squares for A cos(wt) + B sin(wt) + C, a 3 × 3 normal system at the
+ * frequency it is given. With `iterations` above 0 it refines the frequency until convergence, then re-solves A, B, C
+ * at the returned frequency and falls back to the initial estimate if refinement leaves (0, 0.5) or worsens the fit.
  */
 export function fitSine(y: Float64Array, bin: number, iterations = 0, tolerance = 1e-9): Fit {
   const n = y.length;
   // a bin of this record: fractional bins are allowed, which is how a caller passes a frequency it already knows
-  let freq = bin / n, a = 0, b = 0, dc = 0;
-  for (let it = 0; it <= iterations; it++) {
+  const initialFreq = bin / n;
+  const initial = solveThreeParam(y, initialFreq);
+  let freq = initialFreq, { a, b, dc, fitted, sse } = initial;
+  let nIter = 0, leftValidRange = false;
+
+  for (let it = 1; it <= iterations; it++) {
     const w = 2 * Math.PI * freq;
-    // the design matrix, a column at a time; the refinement column is scaled by 1 / n to keep the system conditioned
-    const cols: ((i: number) => number)[] = [(i) => Math.cos(w * i), (i) => Math.sin(w * i), () => 1];
-    if (it > 0) cols.push((i) => (i / n) * (-a * Math.sin(w * i) + b * Math.cos(w * i)));
-    const k = cols.length;
-    const m = Array.from({ length: k }, () => new Array<number>(k).fill(0)), r = new Array<number>(k).fill(0);
+    // the refinement column is scaled by 1 / n to keep the normal system conditioned
+    const m = Array.from({ length: 4 }, () => [0, 0, 0, 0]), r = [0, 0, 0, 0];
     for (let i = 0; i < n; i++) {
-      const v = cols.map((f) => f(i));
-      for (let p = 0; p < k; p++) {
-        for (let q = p; q < k; q++) m[p][q] += v[p] * v[q];
+      const c = Math.cos(w * i), s = Math.sin(w * i);
+      const v = [c, s, 1, (i / n) * (-a * s + b * c)];
+      for (let p = 0; p < 4; p++) {
+        for (let q = p; q < 4; q++) m[p][q] += v[p] * v[q];
         r[p] += v[p] * y[i];
       }
     }
-    for (let p = 0; p < k; p++) for (let q = 0; q < p; q++) m[p][q] = m[q][p];
+    for (let p = 0; p < 4; p++) for (let q = 0; q < p; q++) m[p][q] = m[q][p];
     const coeffs = solve(m, r);
     [a, b, dc] = coeffs;
-    if (k > 3) {
-      const delta = coeffs[3] / n / (2 * Math.PI);
-      freq = Math.min(0.5 - 1e-10, Math.max(1e-10, freq + delta));
-      if (Math.abs(delta) < tolerance) break;
+    const delta = coeffs[3] / n / (2 * Math.PI);
+    nIter++;
+    freq += delta;
+    if (!(freq > 1e-10 && freq < 0.5 - 1e-10)) {
+      leftValidRange = true;
+      break;
     }
+    if (Math.abs(delta) < tolerance) break;
   }
-  const w = 2 * Math.PI * freq;
-  const fitted = new Float64Array(n), error = new Float64Array(n);
-  let sq = 0;
-  for (let i = 0; i < n; i++) {
-    fitted[i] = a * Math.cos(w * i) + b * Math.sin(w * i) + dc;
-    error[i] = y[i] - fitted[i];
-    sq += error[i] * error[i];
+
+  let reverted = leftValidRange;
+  if (!reverted && nIter > 0) {
+    const refined = solveThreeParam(y, freq);
+    let energy = 0;
+    for (let i = 0; i < n; i++) energy += y[i] * y[i];
+    if (refined.sse - initial.sse > 1e-18 * energy) reverted = true;
+    else ({ a, b, dc, fitted, sse } = refined);
   }
-  return { fitted, error, amplitude: Math.hypot(a, b), dc, phase: Math.atan2(-b, a), rmse: Math.sqrt(sq / n), frequency: freq };
+  if (reverted) {
+    freq = initialFreq;
+    ({ a, b, dc, fitted, sse } = initial);
+  }
+
+  const error = Float64Array.from(y, (v, i) => v - fitted[i]);
+  return { fitted, error, amplitude: Math.hypot(a, b), dc, phase: Math.atan2(-b, a), rmse: Math.sqrt(sse / n), frequency: freq };
 }
 
 export interface Bins {

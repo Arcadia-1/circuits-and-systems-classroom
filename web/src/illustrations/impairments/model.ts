@@ -136,10 +136,10 @@ export interface Split extends Phase {
 
 /**
  * analyze_error_by_phase: fit the sine away and split what is left into the parts that ride on it, on its slope, and
- * on neither. It leaves the fit one refinement step, so the frequency it ends on is the one the phases follow.
+ * on neither. Frequency refinement runs to convergence, so the frequency it ends on is the one the phases follow.
  */
 export function splitError(x: Float64Array, fin = TONE.fin): { fit: ReturnType<typeof fitSine>; split: Split } {
-  const fit = fitSine(x, (fin / FS) * N, 1);
+  const fit = fitSine(x, (fin / FS) * N, 100);
   const phase = byPhase(fit.error, fit.frequency * N, fit.phase);
   return { fit, split: { ...phase, radians: fit.amplitude > 1e-10 ? phase.pm / fit.amplitude : 0, amplitude: fit.amplitude } };
 }

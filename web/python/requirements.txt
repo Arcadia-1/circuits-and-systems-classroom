@@ -1,3 +1,5 @@
 # Reference implementation used by the interactive lessons.
-# Includes the offset-spur correction and the masked-lobe SFDR fix (#101), neither of which is in the PyPI 0.9.1 release.
-adctoolbox @ git+https://github.com/Arcadia-1/ADCToolbox.git@cd72061ff3b7a977163dac540da126ae22f5e38d#subdirectory=python
+# Pinned to ADCToolbox 0.9.3 plus PR #130 algorithm fixes (Chebyshev HD generation, sine-histogram INL normalization,
+# integrated-lobe SFDR ranking, averaging-aware median noise floor, converged fit_sine_4param / fit_static_nonlin,
+# windowed coherent averaging, and full-rate TI skew calibration).
+adctoolbox @ git+https://github.com/Arcadia-1/ADCToolbox.git@b96e033af30a49d87a29e3c8900cd19c61e6a8a3#subdirectory=python

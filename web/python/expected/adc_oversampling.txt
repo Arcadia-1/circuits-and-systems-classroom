@@ -9,7 +9,7 @@ order |     OSR 1     OSR 2     OSR 4     OSR 8    OSR 16    OSR 32    OSR 64   
 
 4-bit quantiser: analyze_spectrum SNDR and SFDR at OSR 1 and 32, dB; perfosr SNDR at each OSR, dB;
   and the rms of the record, of ifilter's band 0 ... fs/64, and of what it leaves out
-  order 0:   23.991   50.975 |   39.162   52.828 |   23.987   27.001   30.378   33.105   36.521   39.395   41.973   45.137   47.687
+  order 0:   23.991   50.975 |   39.162   52.828 |   23.987   27.001   30.378   33.105   36.522   39.397   41.977   45.144   47.701
            rms 2.833957e-01 2.828493e-01 1.759073e-02
   order 1:   20.982   45.832 |   64.256   76.774 |   20.934   28.032   37.469   45.837   55.659   64.684   72.467   81.997   87.992
            rms 2.839692e-01 2.828435e-01 2.526079e-02

@@ -1,7 +1,8 @@
 /**
- * ADCToolbox analyze_spectrum (spectrum/compute_spectrum and spectrum/_window) as of cd72061, 0.9.1 plus the masked-lobe
- * SFDR fix of #101: the window, its power correction, the side bins that count as signal, and the metrics built from
- * them. Harmonics 2 … 5.
+ * ADCToolbox analyze_spectrum (spectrum/compute_spectrum, spectrum/_window, spectrum/_harmonics,
+ * spectrum/_side_bin_auto) as of b96e033 (0.9.3 plus PR #130): the window, its power correction, the side bins that
+ * count as signal, integrated-lobe SFDR spur ranking with masked-lobe compensation, and the metrics built from them.
+ * Harmonics 2 … 5.
  * Shared by the converter pages; python/sar_binary_vs_redundant.py checks the port against ADCToolbox itself.
  */
 import { fftAny } from './fft';
@@ -65,13 +66,13 @@ export function autoSideBin(P: Float64Array, bin: number, inband: number, w: Flo
   for (let k = 0; k <= half; k++) ideal[k] *= scale;
   const band = Array.from(P.subarray(0, inband)), positive = band.filter((v) => v > 1e-20);
   const floor = Math.max(positive.length >= 3 ? median(positive) : median(band), top * 1e-24);
-  const most = Math.min(bin, inband - 1 - bin), least = Math.min(Math.max(SIDE_BINS[kind], 0), most);
+  const most = Math.min(bin, inband - 1 - bin), least = Math.max(SIDE_BINS[kind], 0);
   for (let sb = 1; sb <= most; sb++) {
     const left = bin - sb >= 0 && ideal[bin - sb] <= floor;
     const right = bin + sb < inband && ideal[bin + sb] <= floor;
     if (left && right) return Math.max(sb - 1, least);
   }
-  return Math.min(Math.max(AUTO_FALLBACK[kind], least), most);
+  return Math.max(Math.min(AUTO_FALLBACK[kind], most), least);
 }
 
 export function windowOf(kind: Window, n: number): Float64Array {
@@ -125,10 +126,57 @@ export function completeMaskedLobe(
 }
 
 /**
+ * _extract_highest_spur (ADCToolbox #101 and #121): rank every local peak outside the DC and signal masks by its
+ * integrated lobe power (centre ± sideBin, with masked-lobe compensation when the lobe touches a mask or band edge),
+ * rather than by a single FFT bin. `rest` has length >= `inband` with masked bins already zeroed; `signalEnd` is
+ * exclusive.
+ */
+export function highestSpur(
+  rest: Float64Array, signalPower: number, signalPeak: number,
+  signalStart: number, signalEnd: number, sideBin: number, inband: number,
+  sumSlice: (a: Float64Array, start: number, end: number) => number = (a, s, e) => {
+    let total = 0;
+    for (let k = s; k < e; k++) total += a[k];
+    return total;
+  },
+): { spur: number; spurPower: number } {
+  const dcMaskEnd = Math.min(sideBin, inband);
+  const ratio = signalPeak > 0 ? signalPower / signalPeak : 0;
+  const cum = new Float64Array(inband + 1);
+  for (let k = 0; k < inband; k++) cum[k + 1] = cum[k] + rest[k];
+
+  let spur = -1, bestRank = -Infinity;
+  for (let k = 0; k < inband; k++) {
+    const v = rest[k];
+    if (v <= 0) continue;
+    const left = k > 0 ? rest[k - 1] : -Infinity;
+    const right = k + 1 < inband ? rest[k + 1] : -Infinity;
+    if (v < left || v < right) continue;
+    const lobeStart = Math.max(k - sideBin, 0), lobeEnd = Math.min(k + sideBin + 1, inband);
+    const touches = lobeStart === 0 || lobeEnd === inband || lobeStart < dcMaskEnd
+      || Math.max(lobeStart, signalStart) < Math.min(lobeEnd, signalEnd);
+    const comp = touches && ratio > 0 ? v * ratio : 0;
+    const rank = Math.max(cum[lobeEnd] - cum[lobeStart], comp);
+    if (rank > bestRank) {
+      bestRank = rank;
+      spur = k;
+    }
+  }
+  if (spur < 0) {
+    spur = 0;
+    for (let k = 1; k < inband; k++) if (rest[k] > rest[spur]) spur = k;
+  }
+  const spurStart = Math.max(spur - sideBin, 0), spurEnd = Math.min(spur + sideBin + 1, inband);
+  const direct = sumSlice(rest, spurStart, spurEnd);
+  const spurPower = completeMaskedLobe(direct, rest[spur], signalPower, signalPeak, spurStart, spurEnd, signalStart, signalEnd, sideBin, inband);
+  return { spur, spurPower };
+}
+
+/**
  * analyze_spectrum: remove DC, normalise to full scale 2^N, window, one-sided power corrected by 4 / mean(window²).
  * The signal is the fundamental bin and `sides` bins either side of it; everything else in band is noise, and the
- * largest bin outside that band is the spur. The band runs to fs / (2·osr), all of the spectrum when osr is 1.
- * `sides` 'auto' is what analyze_spectrum does when side_bin is left as None.
+ * strongest integrated spur lobe outside that band is the spur. The band runs to fs / (2·osr), all of the spectrum
+ * when osr is 1. `sides` 'auto' is what analyze_spectrum does when side_bin is left as None.
  */
 export function analyzeSpectrum(trace: Float64Array, n: number, kind: Window = 'rectangular', sides: number | 'auto' = 0, osr = 1): Spectrum {
   const len = trace.length, half = Math.floor(len / 2), mean = sum(trace) / len, peak = 2 ** (n - 1);
@@ -148,19 +196,13 @@ export function analyzeSpectrum(trace: Float64Array, n: number, kind: Window = '
   const lo = Math.max(peakBin - sideBin, 0), hi = Math.min(peakBin + sideBin, top);
   let signalPower = 0;
   for (let k = lo; k <= hi; k++) signalPower += P[k];
-  // everything the signal band and the DC leakage beside it do not claim; the rest is noise, and its peak is the spur
+  // everything the signal band and the DC leakage beside it do not claim; the rest is noise
   const rest = Float64Array.from(P, (v, k) => ((k >= lo && k <= hi) || k < sideBin ? 0 : v));
-  let spur = 0, noise = 0;
-  for (let k = 0; k <= top; k++) {
-    noise += rest[k];
-    if (rest[k] > rest[spur]) spur = k;
-  }
-  // a windowed spur is spread over the same side bins as the signal, so it is measured over the same span
-  const spurStart = Math.max(spur - sideBin, 0), spurLast = Math.min(spur + sideBin, top);
-  let spurPower = 0;
-  for (let k = spurStart; k <= spurLast; k++) spurPower += rest[k];
-  spurPower = completeMaskedLobe(spurPower, rest[spur], signalPower, P[peakBin], spurStart, spurLast + 1, lo, hi + 1, sideBin, inband);
-  const fold = (b: number) => (b % len > half ? len - (b % len) : b % len);
+  let noise = 0;
+  for (let k = 0; k <= top; k++) noise += rest[k];
+  // rank candidate spurs by their integrated lobe power over centre ± sideBin, compensating masked lobes
+  const { spur, spurPower } = highestSpur(rest, signalPower, P[peakBin], lo, hi + 1, sideBin, inband);
+  const fold = (b: number) => Math.min(b % len > half ? len - (b % len) : b % len, half);
   const sndr = 10 * Math.log10(signalPower / (noise + 1e-20));
   return {
     dbfs: P.map((p) => 10 * Math.log10(p + 1e-20)),

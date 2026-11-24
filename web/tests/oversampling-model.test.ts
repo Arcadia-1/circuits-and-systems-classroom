@@ -40,7 +40,7 @@ describe('oversampling and noise shaping', () => {
   // [bits, order, SNDR and SFDR over the whole band, the same at OSR 32, perfosr's SNDR at each OSR,
   //  rms of the record, of ifilter's band to fs/64, and of what it leaves out]
   const cases: [number, number, number[], number[], number[], number[]][] = [
-    [4, 0, [23.991, 50.975], [39.162, 52.828], [23.987, 27.001, 30.378, 33.105, 36.521, 39.395, 41.973, 45.137, 47.687], [2.833957e-1, 2.828493e-1, 1.759073e-2]],
+    [4, 0, [23.991, 50.975], [39.162, 52.828], [23.987, 27.001, 30.378, 33.105, 36.522, 39.397, 41.977, 45.144, 47.701], [2.833957e-1, 2.828493e-1, 1.759073e-2]],
     [4, 1, [20.982, 45.832], [64.256, 76.774], [20.934, 28.032, 37.469, 45.837, 55.659, 64.684, 72.467, 81.997, 87.992], [2.839692e-1, 2.828435e-1, 2.526079e-2]],
     [4, 2, [16.242, 39.974], [86.733, 97.539], [16.22, 26.889, 41.94, 56.212, 72.082, 87.117, 97.616, 100.7, 100.801], [2.861825e-1, 2.828427e-1, 4.359372e-2]],
     [4, 3, [11.037, 34.115], [108.462, 118.119], [11.044, 25.147, 45.637, 65.863, 85.733, 90.031, 90.085, 90.085, 90.087], [2.937687e-1, 2.828427e-1, 7.937278e-2]],
@@ -152,7 +152,7 @@ describe('oversampling and noise shaping', () => {
     expect(analyzeSpectrum(x, 10, 'rectangular', 0, 1).sndr).toBe(analyzeSpectrum(x, 10).sndr);
   });
 
-  it('fits the tone with fit_sine_4param’s frequency estimate and one refinement', () => {
+  it('fits the tone with fit_sine_4param’s frequency estimate and converges', () => {
     const fit = fitSine(capture(2, 6));
     expect(fit.frequency * 8192).toBeCloseTo(13, 4);
     expect(fit.amplitude).toBeCloseTo(0.4, 3);

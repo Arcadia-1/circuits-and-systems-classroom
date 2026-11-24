@@ -179,15 +179,15 @@ function leastSquares(columns: Float64Array[], y: Float64Array): number[] {
   return x;
 }
 
-/** _estimate_frequency_fft: the largest bin below Nyquist, moved toward its larger neighbour by their magnitudes. */
+/** _estimate_frequency_fft: the largest bin through Nyquist, moved toward its larger neighbour by their magnitudes. */
 function estimateFrequency(y: Float64Array): number {
   const n = y.length, half = Math.floor(n / 2), re = y.slice(), im = new Float64Array(n);
   fftAny(re, im);
   const mag = (k: number) => (k ? Math.hypot(re[k], im[k]) : 0);
   let k = 0;
-  for (let i = 1; i < half; i++) if (mag(i) > mag(k)) k = i;
+  for (let i = 1; i <= half; i++) if (mag(i) > mag(k)) k = i;
   let at = k;
-  if (k > 0 && k < half - 1) {
+  if (k > 0 && k < half) {
     const r = mag(k + 1) > mag(k - 1) ? 1 : -1;
     at += (r * mag(k + r)) / (mag(k) + mag(k + r));
   }
@@ -201,29 +201,59 @@ export interface SineFit {
   amplitude: number;
 }
 
-/** fit_sine_4param with no frequency given and one iteration: a three-parameter fit, then one four-parameter step. */
-export function fitSine(y: Float64Array): SineFit {
+const DEFAULT_MAX_ITERATIONS = 100;
+
+function solveThreeParam(y: Float64Array, t: Float64Array, freq: number): { a: number; b: number; c: number; fitted: Float64Array; sse: number } {
+  const n = y.length, omega = 2 * Math.PI * freq;
+  const cos = t.map((k) => Math.cos(omega * k)), sin = t.map((k) => Math.sin(omega * k));
+  const [a, b, c] = leastSquares([cos, sin, new Float64Array(n).fill(1)], y);
+  const fitted = t.map((_, j) => a * cos[j] + b * sin[j] + c);
+  let sse = 0;
+  for (let j = 0; j < n; j++) sse += (y[j] - fitted[j]) ** 2;
+  return { a, b, c, fitted, sse };
+}
+
+/**
+ * fit_sine_4param (ADCToolbox PR #130) with no frequency given: three-parameter fit at the FFT estimate, then up to
+ * 100 four-parameter refinement steps until convergence, followed by a three-parameter re-solve at the final frequency.
+ */
+export function fitSine(y: Float64Array, maxIterations = DEFAULT_MAX_ITERATIONS, tolerance = 1e-9): SineFit {
   const n = y.length, t = Float64Array.from({ length: n }, (_, i) => i);
-  let freq = estimateFrequency(y), a = 0, b = 0, c = 0;
-  for (let i = 0; i <= 1; i++) {
+  const initialFreq = estimateFrequency(y);
+  const initial = solveThreeParam(y, t, initialFreq);
+  let freq = initialFreq, { a, b, fitted } = initial;
+  let nIter = 0, leftValidRange = false;
+
+  for (let i = 1; i <= maxIterations; i++) {
     const omega = 2 * Math.PI * freq;
     const cos = t.map((k) => Math.cos(omega * k)), sin = t.map((k) => Math.sin(omega * k));
-    const columns = [cos, sin, new Float64Array(n).fill(1)];
-    if (i) columns.push(t.map((k, j) => k * (-a * sin[j] + b * cos[j])));
-    const x = leastSquares(columns, y);
-    [a, b, c] = x;
-    if (i) {
-      const delta = x[3] / (2 * Math.PI);
-      freq = Math.min(0.5 - 1e-10, Math.max(1e-10, freq + delta));
-      if (Math.abs(delta) < 1e-9) break;
+    const deriv = t.map((k, j) => k * (-a * sin[j] + b * cos[j]));
+    const x = leastSquares([cos, sin, new Float64Array(n).fill(1), deriv], y);
+    [a, b] = x;
+    const delta = x[3] / (2 * Math.PI);
+    nIter++;
+    freq += delta;
+    if (!(freq > 1e-10 && freq < 0.5 - 1e-10)) {
+      leftValidRange = true;
+      break;
     }
+    if (Math.abs(delta) < tolerance) break;
   }
-  const omega = 2 * Math.PI * freq;
-  return {
-    fitted: t.map((k) => a * Math.cos(omega * k) + b * Math.sin(omega * k) + c),
-    frequency: freq,
-    amplitude: Math.sqrt(a ** 2 + b ** 2),
-  };
+
+  let reverted = leftValidRange;
+  if (!reverted && nIter > 0) {
+    const refined = solveThreeParam(y, t, freq);
+    let energy = 0;
+    for (let j = 0; j < n; j++) energy += y[j] * y[j];
+    if (refined.sse - initial.sse > 1e-18 * energy) reverted = true;
+    else ({ a, b, fitted } = refined);
+  }
+  if (reverted) {
+    freq = initialFreq;
+    ({ a, b, fitted } = initial);
+  }
+
+  return { fitted, frequency: freq, amplitude: Math.sqrt(a ** 2 + b ** 2) };
 }
 
 /**

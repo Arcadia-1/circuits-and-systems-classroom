@@ -29,11 +29,11 @@ describe('INL and DNL, ported from ADCToolbox', () => {
   // [name, true DNL min/max, true INL min/max, ramp INL min/max, sine INL min/max, missing, ENOB, SFDR]
   // from python/adc_inl_dnl.py, 10 bits, 64 samples per code, seed 11
   const cases: [string, Shape, number[], number[], number[], number[], number, number, number][] = [
-    ['ideal', shape(), [0, 0], [0, 0], [-2.518, 1.012], [-4.067, 0.902], 0, 9.92, 81.928],
-    ['bow', shape({ bow: 2 }), [-0.008, 0.008], [0, 1.992], [-1.472, 2.804], [-2.828, 2.044], 0, 8.653, 54.684],
-    ['S-curve', shape({ sCurve: 2 }), [-0.02, 0.01], [-1.988, 1.988], [-4.349, 2.97], [-6.058, 2.707], 0, 8.395, 52.858],
-    ['1 % mismatch', shape({ sigma: 0.01, chip: 3 }), [-0.338, 0.141], [-0.274, 0.275], [-2.249, 0.978], [-3.991, 0.742], 0, 9.824, 74.253],
-    ['3 % mismatch', shape({ sigma: 0.03, chip: 3 }), [-1, 0.423], [-0.819, 0.821], [-2.313, 1.007], [-4.029, 0.766], 1, 9.345, 65.225],
+    ['ideal', shape(), [0, 0], [0, 0], [-2.518, 1.012], [-4.059, 0.9], 0, 9.92, 81.928],
+    ['bow', shape({ bow: 2 }), [-0.008, 0.008], [0, 1.992], [-1.472, 2.804], [-2.822, 2.04], 0, 8.653, 54.684],
+    ['S-curve', shape({ sCurve: 2 }), [-0.02, 0.01], [-1.988, 1.988], [-4.349, 2.97], [-6.046, 2.701], 0, 8.395, 52.858],
+    ['1 % mismatch', shape({ sigma: 0.01, chip: 3 }), [-0.338, 0.141], [-0.274, 0.275], [-2.249, 0.978], [-3.983, 0.741], 0, 9.824, 74.253],
+    ['3 % mismatch', shape({ sigma: 0.03, chip: 3 }), [-1, 0.423], [-0.819, 0.821], [-2.313, 1.007], [-4.02, 0.765], 1, 9.345, 65.225],
   ];
   it.each(cases)('matches ADCToolbox for %s', (_name, sh, dnl, inl, ramp, sine, missing, enob, sfdr) => {
     const n = 10, total = 2 ** n * 64;
