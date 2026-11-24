@@ -19,7 +19,7 @@ a 16-bit SAR read 4096 samples at bin 445, its capacitors 1 % off per unit, 8 ch
 
 [binary: training length, then the calibrated ENOB on a capture it has never seen — min, median, max over 8 chips — then the same weights on the training capture itself]
   uncalibrated:  13.7746  14.6131  15.0026
-      32  13.5862  15.2576  15.5399    16.2876  16.9467  49.1839
+      32  13.5862  15.2576  15.5399    16.2876  16.9467      >25
       48  15.4426  15.6164  15.7640    16.1225  16.2383  16.7475
       64  15.5147  15.8218  15.8889    16.0135  16.1678  16.3316
       96  15.7109  15.8704  15.9181    16.0177  16.1146  16.1887
