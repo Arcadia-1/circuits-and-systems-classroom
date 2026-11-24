@@ -145,8 +145,9 @@ export function measureRamp(c: Float64Array, reference: Reference): Static {
 }
 
 /**
- * compute_inl_from_sine: the cumulative histogram of a sine is its arcsine CDF, so −cos(π · cumsum / total) undoes the
- * bow and returns the transition levels. Differences of those are the code widths, rescaled to the analysed range.
+ * compute_inl_from_sine (ADCToolbox #118): the cumulative histogram of a sine is its arcsine CDF, so
+ * −cos(π · cumsum / total) undoes the bow and returns the transition levels. Differences of those are the internal
+ * code widths, normalised by their own mean so missing codes are exactly −1 and DNL has zero mean.
  */
 export function measureSine(c: Float64Array, reference: Reference): Static {
   const total = c.reduce((a, v) => a + v, 0);
@@ -156,11 +157,9 @@ export function measureSine(c: Float64Array, reference: Reference): Static {
     run += c[k];
     level[k] = -Math.cos((Math.PI * run) / total);
   }
-  const dnl = Float64Array.from({ length: c.length - 2 }, (_, k) => level[k + 1] - level[k]);
-  const scale = dnl.reduce((a, v) => a + v, 0);
-  const scaled = dnl.map((v) => (v / scale) * c.length - 1);
-  const dc = mean(scaled);
-  const out = scaled.map((v) => Math.max(-1, v - dc));
+  const width = Float64Array.from({ length: c.length - 2 }, (_, k) => level[k + 1] - level[k]);
+  const lsb = mean(width);
+  const out = width.map((v) => v / lsb - 1);
   // the sine estimator's INL is the running sum of its own DNL, one sample per analysed code
   const raw = new Float64Array(out.length);
   for (let k = 0; k < out.length; k++) raw[k] = (k ? raw[k - 1] : 0) + out[k];

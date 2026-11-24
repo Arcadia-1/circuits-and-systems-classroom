@@ -42,17 +42,18 @@ export const hdCoefficient = (dbc: number, order: number, amp: number): number =
   (2 ** (order - 1) * 10 ** (dbc / 20)) / amp ** (order - 1);
 
 /**
- * The converter's own record, keep × 4096 samples at FS, in the order of exp_d00: a sine on a 0 … 1 V range, the static
- * curve that sets HD2 and HD3, thermal noise, then the quantiser, which floors to a code and clips to the range.
+ * The converter's own record, keep × 4096 samples at FS, in the order of exp_d00: a sine on a 0 … 1 V range, the
+ * Chebyshev-designed static curve of apply_static_nonlinearity_hd (#123) that puts HD2 and HD3 at the exact requested
+ * dBc while keeping the output fundamental amplitude unchanged, thermal noise, then the quantiser.
  */
 export function capture(fin: number, keep: number, hd2: number, hd3: number, seed: number): Float64Array {
   const len = keep * N_FFT, lsb = 1 / 2 ** N_BITS, top = 2 ** N_BITS - 1;
   const amp = 0.5 * 10 ** (AMP_DBFS / 20), dc = 0.5;
-  const k2 = hdCoefficient(hd2, 2, amp), k3 = hdCoefficient(hd3, 3, amp);
+  const k1 = 1 - 3 * 10 ** (hd3 / 20), k2 = hdCoefficient(hd2, 2, amp), k3 = hdCoefficient(hd3, 3, amp);
   const z = gaussians(len, seed);
   return Float64Array.from({ length: len }, (_, i) => {
     const ac = amp * Math.sin(2 * Math.PI * fin * (i / FS)) + dc - dc;
-    const v = ac + (k2 * ac ** 2 + k3 * ac ** 3) + dc + z[i] * NOISE_LSB * lsb;
+    const v = k1 * ac + k2 * ac ** 2 + k3 * ac ** 3 + dc + z[i] * NOISE_LSB * lsb;
     return Math.min(top, Math.max(0, Math.floor(v / lsb)));
   });
 }

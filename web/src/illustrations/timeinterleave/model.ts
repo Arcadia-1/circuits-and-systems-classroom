@@ -1,8 +1,8 @@
 /**
  * Time-interleaved converters: M slower sub-ADCs take turns, and whatever differs between them, an offset, a gain, the
  * instant each one samples, repeats every M samples and becomes spurs. One sine is enough to measure all three and take
- * them out again, as long as each sub-ADC still sees the tone below its own Nyquist frequency.
- * Ported from ADCToolbox 0.9.1 (github.com/Arcadia-1/ADCToolbox):
+ * them out again across the aggregate first Nyquist zone.
+ * Ported from ADCToolbox (b96e033, github.com/Arcadia-1/ADCToolbox):
  *   timeinterleave/   deinterleave, interleave, extract_mismatch_sine, predict_spurs, calibrate_foreground,
  *                     fractional_delay_fft, fractional_delay_farrow
  *   fundamentals/     find_coherent_frequency, fold_frequency_to_nyquist, through src/lib/frequency.ts
@@ -354,18 +354,46 @@ export function delayFarrow(x: Float64Array, delay: number, fs: number, taps = T
   });
 }
 
+const MAX_SKEW_PASSES = 12;
+const FARROW_SKEW_PASSES = 3;
+const SKEW_RESIDUAL_TOLERANCE = 1e-14;
+
 /**
- * calibrate_foreground: offset out first, then the gain, then each channel delayed by its own skew at fs/m, so the
- * channels are mixed only once their levels already agree.
+ * calibrate_foreground (ADCToolbox PR #130): offset out first, then the gain, then skew inverted on the interleaved
+ * full-rate stream via fixed-point iteration z <- z + (y - A z), where A resamples z on the skewed channel grid.
+ * Operating at fs (instead of each sub-ADC's fs/m) works across the whole first Nyquist zone 0 … fs/2.
  */
 export function calibrate(x: Float64Array, m: number, p: Params, fs: number, method: Exclude<Method, 'off'>, taps = TAPS): Float64Array {
   const channels = deinterleave(x, m).map((ch, c) => ch.map((v) => (v - p.offset[c]) / p.gain[c]));
-  return interleave(
-    channels.map((ch, c) => {
-      if (Math.abs(p.skew[c]) < 1e-18) return ch;
-      return method === 'fft' ? delayFft(ch, p.skew[c], fs / m) : delayFarrow(ch, p.skew[c], fs / m, taps);
-    }),
-  );
+  const corrected = interleave(channels);
+  const active: number[] = [];
+  for (let c = 0; c < m; c++) if (Math.abs(p.skew[c]) >= 1e-18) active.push(c);
+  if (!active.length) return corrected;
+
+  const advance = (stream: Float64Array, seconds: number) =>
+    method === 'fft' ? delayFft(stream, -seconds, fs) : delayFarrow(stream, -seconds, fs, taps);
+  const maxPasses = method === 'fft' ? MAX_SKEW_PASSES : FARROW_SKEW_PASSES;
+
+  const n = corrected.length;
+  const estimate = corrected.slice();
+  let scale = 0;
+  for (let i = 0; i < n; i++) scale = Math.max(scale, Math.abs(corrected[i]));
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const skewed = estimate.slice();
+    for (const c of active) {
+      const shifted = advance(estimate, p.skew[c]);
+      for (let i = c; i < n; i += m) skewed[i] = shifted[i];
+    }
+    let maxRes = 0;
+    for (let i = 0; i < n; i++) {
+      const r = corrected[i] - skewed[i];
+      estimate[i] += r;
+      maxRes = Math.max(maxRes, Math.abs(r));
+    }
+    if (maxRes <= SKEW_RESIDUAL_TOLERANCE * scale) break;
+  }
+  return estimate;
 }
 
 /** analyze_spectrum on the ±0.5 V range: codes of the same resolution scale it to the full scale the port expects. */
@@ -397,7 +425,7 @@ export function decimate(x: Float64Array, factor: number): Float64Array {
 /** The largest spur predict_spurs expects, as an SFDR. */
 export const predictedSfdr = (spurs: Spur[]): number => -Math.max(...spurs.map((s) => s.dbc));
 
-/** The sub-ADCs' own Nyquist frequency: calibrate_foreground's delays hold only below it. */
+/** The sub-ADCs' own Nyquist frequency, fs / (2M). */
 export const channelNyquist = (m: number): number => FS / (2 * m);
 
 /** The fundamental-frequency gain and phase that the physical channel front ends present to predict_spurs. */

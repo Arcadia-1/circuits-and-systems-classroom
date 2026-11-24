@@ -48,11 +48,14 @@ export const CASES: Record<string, Case> = {
 export const hdToK = (db: number | null, order: number, amp = AMP): number =>
   db === null ? 0 : (2 ** (order - 1) * 10 ** (db / 20)) / amp ** (order - 1);
 
-/** apply_static_nonlinearity: y = x + k2·x² + k3·x³ on the part of the signal that swings. */
-export const bend = (signal: Float64Array, k2: number, k3: number, dc = DC): Float64Array =>
+/** apply_static_nonlinearity: y = k1·x + k2·x² + k3·x³ on the part of the signal that swings. */
+export const bend = (signal: Float64Array, k2: number, k3: number, dc = DC, k1 = 1): Float64Array =>
   Float64Array.from(signal, (v) => {
     const x = v - dc;
-    return dc + x + k2 * x * x + k3 * x * x * x;
+    let d = k1 * x;
+    if (k2 !== 0) d += k2 * x ** 2;
+    if (k3 !== 0) d += k3 * x ** 3;
+    return d + dc;
   });
 
 /** apply_quantization_noise on 0 … 1 V. */
@@ -61,23 +64,24 @@ export function quantise(signal: Float64Array, bits: number): Float64Array {
   return Float64Array.from(signal, (v) => Math.min(top, Math.max(0, Math.floor(v / lsb))) * lsb);
 }
 
-/** One capture: a coherent sine bent by a static curve, then the noise floor and the converter. */
+/** One capture: a coherent sine bent by apply_static_nonlinearity_hd's Chebyshev curve (#123), noise, then quantiser. */
 export function capture(c: Case, fin = TONE.fin, bits = BITS): Float64Array {
   const clean = Float64Array.from({ length: N }, (_, i) => AMP * Math.sin((2 * Math.PI * fin * i) / FS) + DC);
-  const bent = bend(clean, hdToK(c.hd2, 2), hdToK(c.hd3, 3));
+  const k1 = c.hd3 === null ? 1 : 1 - 3 * 10 ** (c.hd3 / 20);
+  const bent = bend(clean, hdToK(c.hd2, 2), hdToK(c.hd3, 3), DC, k1);
   return quantise(Float64Array.from(bent, (v, i) => v + NOISE[i] * c.noise), bits);
 }
 
-/** _estimate_frequency_fft: the biggest bin of the plain FFT, with a parabola through its neighbours. */
+/** _estimate_frequency_fft: the biggest bin through Nyquist, with a parabola through its neighbours. */
 export function estimateFrequency(y: Float64Array): number {
   const n = y.length, re = Float64Array.from(y), im = new Float64Array(n);
   fftAny(re, im);
-  const half = Math.floor(n / 2), spec = new Float64Array(half);
-  for (let k = 1; k < half; k++) spec[k] = Math.hypot(re[k], im[k]);
+  const half = Math.floor(n / 2), spec = new Float64Array(half + 1);
+  for (let k = 1; k <= half; k++) spec[k] = Math.hypot(re[k], im[k]);
   let k = 0;
-  for (let i = 1; i < half; i++) if (spec[i] > spec[k]) k = i;
+  for (let i = 1; i <= half; i++) if (spec[i] > spec[k]) k = i;
   let at = k;
-  if (k > 0 && k < half - 1) {
+  if (k > 0 && k < half) {
     const r = spec[k + 1] > spec[k - 1] ? 1 : -1;
     at += (r * spec[k + r]) / (spec[k] + spec[k + r]);
   }
@@ -110,7 +114,7 @@ export function decompose(signal: Float64Array, nHarmonics = 5, frequency?: numb
   for (const v of signal) dc += v;
   dc /= n;
   const zero = Float64Array.from(signal, (v) => v - dc);
-  const freq = fitSine(zero, (frequency ?? estimateFrequency(zero)) * n, 1).frequency;
+  const freq = fitSine(zero, (frequency ?? estimateFrequency(zero)) * n, 100).frequency;
 
   // the design matrix, a column at a time: DC, then the cos and sin of every harmonic
   const w = 2 * Math.PI * freq, k = 2 * nHarmonics + 1;
@@ -203,23 +207,20 @@ export interface StaticFit {
 }
 
 /**
- * fit_static_nonlin: fit the ideal sine, take it as the input the converter was given, and fit a polynomial from that
- * input to what came out. Normalising by the linear term is what makes k2 and k3 comparable to the ones asked for;
- * gain itself cannot be seen this way, because the sine fit has already absorbed it.
+ * fit_static_nonlin (ADCToolbox PR #130): fit the output fundamental, take its zero-DC sine as the reference input,
+ * and fit a polynomial to the output. Referring the coefficients back through the fitted linear term `k1` uses
+ * `k_i = c_i / k1^i` so cubic gain on the fundamental is removed.
  */
 export function fitStaticNonlin(signal: Float64Array, order = 3): StaticFit {
   const n = signal.length;
-  const fit = fitSine(signal, estimateFrequency(signal) * n, 1);
-  let meanFit = 0, meanSig = 0;
-  for (let i = 0; i < n; i++) {
-    meanFit += fit.fitted[i];
-    meanSig += signal[i];
-  }
-  meanFit /= n;
+  const fit = fitSine(signal, estimateFrequency(signal) * n, 100);
+  const xOffset = fit.dc;
+  let meanSig = 0;
+  for (let i = 0; i < n; i++) meanSig += signal[i];
   meanSig /= n;
   let xMax = 0;
-  for (let i = 0; i < n; i++) xMax = Math.max(xMax, Math.abs(fit.fitted[i] - meanFit));
-  const xNorm = Float64Array.from(fit.fitted, (v) => (v - meanFit) / xMax);
+  for (let i = 0; i < n; i++) xMax = Math.max(xMax, Math.abs(fit.fitted[i] - xOffset));
+  const xNorm = Float64Array.from(fit.fitted, (v) => (v - xOffset) / xMax);
   const yAc = Float64Array.from(signal, (v) => v - meanSig);
   const c = polyfit(xNorm, yAc, order);
   const k1 = c[1] / xMax;
@@ -232,16 +233,16 @@ export function fitStaticNonlin(signal: Float64Array, order = 3): StaticFit {
   const points = 1000, x = new Float64Array(points), y = new Float64Array(points);
   for (let i = 0; i < points; i++) {
     x[i] = lo + ((hi - lo) * i) / (points - 1);
-    const u = (x[i] - meanFit) / xMax;
+    const u = (x[i] - xOffset) / xMax;
     let sum = 0;
     for (let j = c.length - 1; j >= 0; j--) sum = sum * u + c[j];
     y[i] = sum + meanSig;
   }
   return {
-    k2: c[2] / xMax ** 2 / k1,
-    k3: order >= 3 ? c[3] / xMax ** 3 / k1 : NaN,
+    k2: c[2] / xMax ** 2 / k1 ** 2,
+    k3: order >= 3 ? c[3] / xMax ** 3 / k1 ** 3 : NaN,
     k1,
-    centre: meanFit,
+    centre: xOffset,
     level: meanSig,
     fit,
     transfer: { x, y },
@@ -253,13 +254,13 @@ export const spectrumOf = (x: Float64Array): Spectrum => analyzeSpectrum(x.map((
 
 /**
  * The curve the static fit found, against the one that was asked for: both as the deviation from the straight line
- * through them, which is exactly what k2 and k3 describe once the linear term is divided out.
+ * through them, which is what k2 and k3 describe once the linear term is subtracted out.
  */
 export function curve(fit: StaticFit, k2: number, k3: number, points = 160): { x: Float64Array; measured: Float64Array; asked: Float64Array } {
   const { x: tx, y: ty } = fit.transfer;
   const x = new Float64Array(points), measured = new Float64Array(points), asked = new Float64Array(points);
-  // dividing the fitted curve by its own linear term is what leaves k2·X² + k3·X³, the pair the fit reports
-  const dev = (i: number) => (ty[i] - fit.level) / fit.k1 - (tx[i] - fit.centre);
+  // subtracting the fitted linear term leaves c2·u² + c3·u³, matching the k2·u² + k3·u³ curve asked for
+  const dev = (i: number) => ty[i] - fit.level - fit.k1 * (tx[i] - fit.centre);
   let middle = 0;
   for (let i = 1; i < tx.length; i++) if (Math.abs(tx[i] - fit.centre) < Math.abs(tx[middle] - fit.centre)) middle = i;
   const at = dev(middle);

@@ -1,9 +1,9 @@
  shape                     | true DNL min/max | true INL min/max | ramp INL min/max | sine INL min/max | missing
- ideal                    |   0.000  0.000  |   0.000  0.000  |  -2.518  1.012  |  -4.067  0.902  |   0   ENOB  9.920 SFDR  81.928
- bow 2 LSB                |  -0.008  0.008  |   0.000  1.992  |  -1.472  2.804  |  -2.828  2.044  |   0   ENOB  8.653 SFDR  54.684
- S-curve 2 LSB            |  -0.020  0.010  |  -1.988  1.988  |  -4.349  2.970  |  -6.058  2.707  |   0   ENOB  8.395 SFDR  52.858
- mismatch 1 %             |  -0.338  0.141  |  -0.274  0.275  |  -2.249  0.978  |  -3.991  0.742  |   0   ENOB  9.824 SFDR  74.253
- mismatch 3 %             |  -1.000  0.423  |  -0.819  0.821  |  -2.313  1.007  |  -4.029  0.766  |   1   ENOB  9.345 SFDR  65.225
+ ideal                    |   0.000  0.000  |   0.000  0.000  |  -2.518  1.012  |  -4.059  0.900  |   0   ENOB  9.920 SFDR  81.928
+ bow 2 LSB                |  -0.008  0.008  |   0.000  1.992  |  -1.472  2.804  |  -2.822  2.040  |   0   ENOB  8.653 SFDR  54.684
+ S-curve 2 LSB            |  -0.020  0.010  |  -1.988  1.988  |  -4.349  2.970  |  -6.046  2.701  |   0   ENOB  8.395 SFDR  52.858
+ mismatch 1 %             |  -0.338  0.141  |  -0.274  0.275  |  -2.249  0.978  |  -3.983  0.741  |   0   ENOB  9.824 SFDR  74.253
+ mismatch 3 %             |  -1.000  0.423  |  -0.819  0.821  |  -2.313  1.007  |  -4.020  0.765  |   1   ENOB  9.345 SFDR  65.225
 
 ramp INL of a 2 LSB bow, endpoint vs best fit, and how the estimate settles with samples per code
      16 samples/code: endpoint  -3.730 ..  3.846 | best fit  -3.774 ..  3.630
