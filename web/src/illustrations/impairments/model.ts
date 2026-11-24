@@ -70,7 +70,7 @@ export function settle(signal: Float64Array, k: number, tauNom = 40e-12): Float6
 export function remember(signal: Float64Array, strength: number): Float64Array {
   const n = signal.length;
   const msb = Float64Array.from(signal, (v) => Math.floor(v * 2 ** 4) / 2 ** 4);
-  const lsb = Float64Array.from(signal, (v, i) => Math.floor((v - msb[i]) * 2 ** 12) / 2 ** 12);
+  const lsb = Float64Array.from(signal, (v, i) => Math.floor((v - msb[i]) * 2 ** 16) / 2 ** 16);
   return Float64Array.from({ length: n }, (_, i) => msb[i] + lsb[i] + strength * msb[(i + n - 1) % n]);
 }
 

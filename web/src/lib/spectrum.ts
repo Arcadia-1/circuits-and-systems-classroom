@@ -38,13 +38,17 @@ export const median = (a: number[]): number => {
 
 /**
  * _locate_fundamental's refinement: a parabola through the log powers of the peak and its neighbours, unless a
- * neighbour lies four decades down, where it is floor or a spur rather than leakage of the peak.
+ * neighbour lies four decades down, where it is floor or a spur rather than leakage of the peak, or the peak sits
+ * next to DC or the halved Nyquist bin.
  */
 export function fractionalPeak(P: Float64Array, bin: number, inband: number): number {
-  if (bin <= 0 || bin >= inband - 1) return bin;
-  const [m1, y0, p1] = [P[bin - 1], P[bin], P[bin + 1]].map((v) => Math.log10(Math.max(v, 1e-20)));
+  const upperLimit = Math.min(inband - 1, P.length - 2);
+  if (bin <= 1 || bin >= upperLimit) return bin;
+  const [m1, y0, p1] = [P[bin - 1], P[bin], P[bin + 1]].map((v) => Math.log10(Math.max(v, 1e-30)));
   if (Math.min(m1, p1) < y0 - 4) return bin;
-  const at = bin + (p1 - m1) / (2 * (2 * y0 - m1 - p1));
+  const denom = 2 * (2 * y0 - m1 - p1);
+  if (denom === 0) return bin;
+  const at = bin + (p1 - m1) / denom;
   return Number.isFinite(at) ? at : bin;
 }
 
@@ -64,7 +68,7 @@ export function autoSideBin(P: Float64Array, bin: number, inband: number, w: Flo
   for (let k = 0; k <= half; k++) ideal[k] *= correction;
   const scale = top / Math.max(ideal[bin], 1e-30);
   for (let k = 0; k <= half; k++) ideal[k] *= scale;
-  const band = Array.from(P.subarray(0, inband)), positive = band.filter((v) => v > 1e-20);
+  const band = Array.from(P.subarray(0, inband)), positive = band.filter((v) => v > 0);
   const floor = Math.max(positive.length >= 3 ? median(positive) : median(band), top * 1e-24);
   const most = Math.min(bin, inband - 1 - bin), least = Math.max(SIDE_BINS[kind], 0);
   for (let sb = 1; sb <= most; sb++) {
@@ -116,12 +120,14 @@ export function inbandBins(len: number, osr = 1): number {
  */
 export function completeMaskedLobe(
   spurPower: number, spurPeak: number, signalPower: number, signalPeak: number,
-  spurStart: number, spurEnd: number, signalStart: number, signalEnd: number, sideBin: number, inband: number,
+  spurCenter: number, spurStart: number, spurEnd: number, signalStart: number, signalEnd: number, sideBin: number, inband: number,
+  nFull = inband,
 ): number {
-  const touchesEdge = spurStart === 0 || spurEnd === inband;
-  const touchesDc = spurStart < Math.min(sideBin, inband);
+  const dcMaskEnd = Math.min(Math.max(sideBin, 1), inband);
+  const touchesNyquist = inband === nFull && sideBin > 0 && spurCenter + sideBin >= inband - 1;
+  const touchesEdge = spurCenter - sideBin < dcMaskEnd || spurCenter + sideBin + 1 > inband || touchesNyquist;
   const touchesSignal = Math.max(spurStart, signalStart) < Math.min(spurEnd, signalEnd);
-  if (!(touchesEdge || touchesDc || touchesSignal) || signalPeak <= 0 || spurPeak <= 0) return spurPower;
+  if (!(touchesEdge || touchesSignal) || signalPeak <= 0 || spurPeak <= 0) return spurPower;
   return Math.max(spurPower, (spurPeak * signalPower) / signalPeak);
 }
 
@@ -139,8 +145,9 @@ export function highestSpur(
     for (let k = s; k < e; k++) total += a[k];
     return total;
   },
+  nFull = inband,
 ): { spur: number; spurPower: number } {
-  const dcMaskEnd = Math.min(sideBin, inband);
+  const dcMaskEnd = Math.min(Math.max(sideBin, 1), inband);
   const ratio = signalPeak > 0 ? signalPower / signalPeak : 0;
   const cum = new Float64Array(inband + 1);
   for (let k = 0; k < inband; k++) cum[k + 1] = cum[k] + rest[k];
@@ -153,7 +160,8 @@ export function highestSpur(
     const right = k + 1 < inband ? rest[k + 1] : -Infinity;
     if (v < left || v < right) continue;
     const lobeStart = Math.max(k - sideBin, 0), lobeEnd = Math.min(k + sideBin + 1, inband);
-    const touches = lobeStart === 0 || lobeEnd === inband || lobeStart < dcMaskEnd
+    const touchesNyquist = inband === nFull && sideBin > 0 && k + sideBin >= inband - 1;
+    const touches = k - sideBin < dcMaskEnd || k + sideBin + 1 > inband || touchesNyquist
       || Math.max(lobeStart, signalStart) < Math.min(lobeEnd, signalEnd);
     const comp = touches && ratio > 0 ? v * ratio : 0;
     const rank = Math.max(cum[lobeEnd] - cum[lobeStart], comp);
@@ -168,7 +176,7 @@ export function highestSpur(
   }
   const spurStart = Math.max(spur - sideBin, 0), spurEnd = Math.min(spur + sideBin + 1, inband);
   const direct = sumSlice(rest, spurStart, spurEnd);
-  const spurPower = completeMaskedLobe(direct, rest[spur], signalPower, signalPeak, spurStart, spurEnd, signalStart, signalEnd, sideBin, inband);
+  const spurPower = completeMaskedLobe(direct, rest[spur], signalPower, signalPeak, spur, spurStart, spurEnd, signalStart, signalEnd, sideBin, inband, nFull);
   return { spur, spurPower };
 }
 
@@ -197,13 +205,14 @@ export function analyzeSpectrum(trace: Float64Array, n: number, kind: Window = '
   let signalPower = 0;
   for (let k = lo; k <= hi; k++) signalPower += P[k];
   // everything the signal band and the DC leakage beside it do not claim; the rest is noise
-  const rest = Float64Array.from(P, (v, k) => ((k >= lo && k <= hi) || k < sideBin ? 0 : v));
+  const dcMaskEnd = Math.min(Math.max(sideBin, 1), inband);
+  const rest = Float64Array.from(P, (v, k) => ((k >= lo && k <= hi) || k < dcMaskEnd ? 0 : v));
   let noise = 0;
   for (let k = 0; k <= top; k++) noise += rest[k];
   // rank candidate spurs by their integrated lobe power over centre ± sideBin, compensating masked lobes
-  const { spur, spurPower } = highestSpur(rest, signalPower, P[peakBin], lo, hi + 1, sideBin, inband);
+  const { spur, spurPower } = highestSpur(rest, signalPower, P[peakBin], lo, hi + 1, sideBin, inband, undefined, P.length);
   const fold = (b: number) => Math.min(b % len > half ? len - (b % len) : b % len, half);
-  const sndr = 10 * Math.log10(signalPower / (noise + 1e-20));
+  const sndr = 10 * Math.log10(signalPower / (noise + 1e-30));
   return {
     dbfs: P.map((p) => 10 * Math.log10(p + 1e-20)),
     signal: peakBin,

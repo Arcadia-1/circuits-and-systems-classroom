@@ -113,15 +113,38 @@ export function alignPhase(re: Float64Array, im: Float64Array, bin: number, refi
   const noOwner = n + 1;
   const owner = new Int32Array(nHalf + 1).fill(noOwner);
   const oddZone = new Uint8Array(n);
+  const centers = new Int32Array(n);
   for (let h = 1; h <= n; h++) {
     const folded = (h * bin) % n;
-    const odd = 2 * folded >= n;
+    const odd = 2 * folded > n;
     oddZone[h - 1] = odd ? 1 : 0;
-    const center = odd ? n - folded : folded;
-    for (let offset = -halfWidth; offset <= halfWidth; offset++) {
-      const pos = center + offset;
-      if (pos >= 0 && pos <= nHalf && h < owner[pos]) owner[pos] = h;
+    centers[h - 1] = odd ? n - folded : folded;
+  }
+
+  const maxLobeOrder = Math.min(16, n);
+  // Pass 1: fundamental owns its full window lobe
+  for (let offset = -halfWidth; offset <= halfWidth; offset++) {
+    const pos = centers[0] + offset;
+    if (pos >= 0 && pos <= nHalf) owner[pos] = 1;
+  }
+  // Pass 2: low-order harmonic centers (2..16) own their center bins
+  for (let h = 2; h <= maxLobeOrder; h++) {
+    const pos = centers[h - 1];
+    if (pos >= 0 && pos <= nHalf && owner[pos] === noOwner) owner[pos] = h;
+  }
+  // Pass 3: low-order harmonic side bins by increasing distance from center
+  for (let dist = 1; dist <= halfWidth; dist++) {
+    for (const sign of [-1, 1]) {
+      for (let h = 2; h <= maxLobeOrder; h++) {
+        const pos = centers[h - 1] + sign * dist;
+        if (pos >= 0 && pos <= nHalf && owner[pos] === noOwner) owner[pos] = h;
+      }
     }
+  }
+  // Pass 4: remaining higher-order harmonic centers only
+  for (let h = maxLobeOrder + 1; h <= n; h++) {
+    const pos = centers[h - 1];
+    if (pos >= 0 && pos <= nHalf && owner[pos] === noOwner) owner[pos] = h;
   }
 
   for (let pos = 0; pos <= nHalf; pos++) {
@@ -158,16 +181,17 @@ function locate(P: Float64Array, inband: number): { bin: number; refined: number
  */
 export function averagedSpectrum(runs: Float64Array[], kind: Window, coherent: boolean, maxHarmonic = 5): AveragedSpectrum {
   const n = runs[0].length, half = Math.floor(n / 2), inband = inbandBins(n);
+  const centered = runs.map((run) => {
+    const mean = npSum(run) / n;
+    return run.map((v) => v - mean);
+  });
   let lo = Infinity, hi = -Infinity;
-  for (const run of runs) for (const v of run) [lo, hi] = [Math.min(lo, v), Math.max(hi, v)];
+  for (const run of centered) for (const v of run) [lo, hi] = [Math.min(lo, v), Math.max(hi, v)];
   const peak = (hi - lo) / 2;
   const w = windowOf(kind, n);
   const gain = npSum(w) / n, enbw = (n * npSum(w.map((v) => v * v))) / npSum(w) ** 2;
   const correction = 4 / (gain ** 2 * enbw);
-  const prepared = runs.map((run) => {
-    const mean = npSum(run) / n;
-    return run.map((v, i) => ((v - mean) / (peak || 1)) * w[i]);
-  });
+  const prepared = centered.map((run) => run.map((v, i) => (v / (peak || 1)) * w[i]));
 
   const power = new Float64Array(half + 1);
   let re: Float64Array | null = null, im: Float64Array | null = null;
@@ -229,29 +253,30 @@ export function averagedSpectrum(runs: Float64Array[], kind: Window, coherent: b
   const sig = npSum(power, start, end);
 
   const harmonicBins = Array.from({ length: maxHarmonic - 1 }, (_, i) => Math.min(roundEven(foldFractional(refined * (i + 2), n)), half));
-  const harmonicPower = harmonicBins.map(() => 1e-15);
+  const harmonicPower = harmonicBins.map(() => 1e-30);
   const thdBins = new Set<number>();
   harmonicBins.forEach((center, i) => {
-    if (center <= sideBin) return;
+    if (center <= sideBin || Math.abs(center - signal) <= sideBin) return;
     const lobe: number[] = [];
     for (let k = Math.max(center - sideBin, 0); k < Math.min(center + sideBin + 1, power.length); k++) {
       if (k < sideBin + 1 || (k >= start && k < end)) continue;
       lobe.push(k);
     }
     if (!lobe.length) return;
-    harmonicPower[i] = Math.max(npSum(lobe.map((k) => power[k])), 1e-15);
+    harmonicPower[i] = Math.max(npSum(lobe.map((k) => power[k])), 1e-30);
     lobe.forEach((k) => thdBins.add(k));
   });
-  const thdPower = Math.max(thdBins.size ? npSum([...thdBins].sort((a, b) => a - b).map((k) => power[k])) : 1e-15, 1e-15);
+  const thdPower = Math.max(thdBins.size ? npSum([...thdBins].sort((a, b) => a - b).map((k) => power[k])) : 1e-30, 1e-30);
 
   // the strongest spur lobe outside DC and the signal band
-  const rest = Float64Array.from(power.subarray(0, inband), (v, k) => (k < sideBin || (k >= start && k < end) ? 0 : v));
-  const { spur, spurPower } = highestSpur(rest, sig, power[signal], start, end, sideBin, inband, npSum);
+  const dcMaskEnd = Math.min(Math.max(sideBin, 1), inband);
+  const rest = Float64Array.from(power.subarray(0, inband), (v, k) => (k < dcMaskEnd || (k >= start && k < end) ? 0 : v));
+  const { spur, spurPower } = highestSpur(rest, sig, power[signal], start, end, sideBin, inband, npSum, power.length);
 
-  const sndr = 10 * Math.log10(sig / (npSum(rest) + 1e-20));
+  const sndr = 10 * Math.log10(sig / (npSum(rest) + 1e-30));
 
   // nf_method 0: the median of a median-based, a trimmed-mean and an excluding estimate of the noise
-  const floorBins = Array.from(rest).filter((v) => Math.abs(v) > 1e-20);
+  const floorBins = Array.from(rest).filter((v) => v > 0);
   const pool = floorBins.length ? floorBins : Array.from(rest);
   const mn = medianToMeanRatio(nAveraged, coherent);
   const byMedian = (median(pool) / mn) * inband;
@@ -264,7 +289,7 @@ export function averagedSpectrum(runs: Float64Array[], kind: Window, coherent: b
     if (center <= sideBin) continue;
     for (let k = Math.max(center - sideBin, 0); k < Math.min(center + sideBin + 1, inband); k++) excluded[k] = 0;
   }
-  const noise = Math.max(median([byMedian, trimmed, npSum(excluded)]), 1e-15);
+  const noise = Math.max(median([byMedian, trimmed, npSum(excluded)]), 1e-30);
 
   return {
     power,

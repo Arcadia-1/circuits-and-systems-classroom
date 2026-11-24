@@ -227,10 +227,11 @@ export function fitSine(y: Float64Array, maxIterations = DEFAULT_MAX_ITERATIONS,
   for (let i = 1; i <= maxIterations; i++) {
     const omega = 2 * Math.PI * freq;
     const cos = t.map((k) => Math.cos(omega * k)), sin = t.map((k) => Math.sin(omega * k));
-    const deriv = t.map((k, j) => k * (-a * sin[j] + b * cos[j]));
+    const colScale = Math.max(n * Math.hypot(a, b), 1);
+    const deriv = t.map((k, j) => (k / colScale) * (-a * sin[j] + b * cos[j]));
     const x = leastSquares([cos, sin, new Float64Array(n).fill(1), deriv], y);
     [a, b] = x;
-    const delta = x[3] / (2 * Math.PI);
+    const delta = x[3] / colScale / (2 * Math.PI);
     nIter++;
     freq += delta;
     if (!(freq > 1e-10 && freq < 0.5 - 1e-10)) {
@@ -257,8 +258,9 @@ export function fitSine(y: Float64Array, maxIterations = DEFAULT_MAX_ITERATIONS,
 }
 
 /**
- * perfosr (sweep_performance_vs_osr): fit the sine, take the one-sided spectrum of the Hann-windowed residual, and at
- * each OSR divide the fitted sine's power by the residual's power up to fs / (2·OSR). SNDR in dB, one per OSR given.
+ * perfosr (sweep_performance_vs_osr): fit the sine, take the one-sided spectrum of the Hann-windowed residual, mask
+ * DC and fundamental sine-fit leakage bins, and at each OSR divide the fitted sine's power by the cumulative residual
+ * power up to fs / (2·OSR). SNDR in dB, one per OSR given.
  */
 export function perfosr(data: Float64Array, osrs: number[]): number[] {
   const n = data.length, half = Math.floor(n / 2), fit = fitSine(data);
@@ -269,21 +271,25 @@ export function perfosr(data: Float64Array, osrs: number[]): number[] {
   const re = data.map((v, i) => ((v - fit.fitted[i]) * hann[i]) / scale), im = new Float64Array(n);
   fftAny(re, im);
   const spec = Float64Array.from({ length: half + 1 }, (_, k) => ((re[k] ** 2 + im[k] ** 2) / n ** 2) * (k > 0 && k < half ? 2 : 1));
-  const signal = fit.amplitude ** 2 / 2;
-  const sndr = new Array<number>(osrs.length);
-  let counted = 0, noise = 0;
-  // narrowest band first, so each wider one only adds the bins it has beyond the last
-  for (const i of osrs.map((_, i) => i).sort((p, q) => osrs[q] - osrs[p])) {
-    const bins = inbandBins(n, osrs[i]);
-    if (bins > counted) {
-      let slice = 0;
-      for (let k = counted; k < bins; k++) slice += spec[k];
-      noise += slice;
-    }
-    counted = bins;
-    sndr[i] = 10 * Math.log10(signal / noise);
+  // Mask DC leakage (bins 0..1) and fundamental sine-fit leakage (center ± 3 bins)
+  spec[0] = 0;
+  if (spec.length > 1) spec[1] = 0;
+  const fundBin = Math.round(fit.frequency * n);
+  if (fundBin >= 0 && fundBin < spec.length) {
+    for (let k = Math.max(0, fundBin - 3); k < Math.min(spec.length, fundBin + 4); k++) spec[k] = 0;
   }
-  return sndr;
+  const cum = new Float64Array(spec.length);
+  let running = 0;
+  for (let k = 0; k < spec.length; k++) {
+    running += spec[k];
+    cum[k] = running;
+  }
+  const signal = fit.amplitude ** 2 / 2;
+  return osrs.map((osr) => {
+    const bins = inbandBins(n, osr);
+    const noise = cum[bins - 1];
+    return noise > 0 ? 10 * Math.log10(signal / noise) : Infinity;
+  });
 }
 
 /** ifilter (extract_freq_components) for one band, lo … hi of fs: keep those bins and their mirrors, drop the rest. */
