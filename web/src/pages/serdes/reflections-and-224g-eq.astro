@@ -1,0 +1,11 @@
+---
+import Base from '../../layouts/Base.astro';
+import SerdesReflections from '../../illustrations/serdes-reflections/SerdesReflections.svelte';
+import '../../styles/course.css';
+---
+<Base
+  title="224G Reflections & Equalization"
+  description="Watch impedance discontinuities spawn reflections, delayed echoes and S21 notches in a 224G PAM4 link, see how bridged T-coils restore 50 Ω matching, and compare TX FFE, CTLE, 44-tap RX FFE, 1-tap DFE and 4-state Viterbi MLSE."
+>
+  <SerdesReflections client:load />
+</Base>

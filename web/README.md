@@ -129,6 +129,15 @@ Run these in `web/` with Node 22.12 or newer and pnpm 11.
   independent feedback histories, rolling-window expiry and bin-for-bin eye/histogram agreement.
   `python/serdes_112g_link.py` is the NumPy
   reference. three.js loads only on this page, as a lazy chunk.
+- **224G reflections & equalization** at `/serdes/reflections-and-224g-eq/`. A guided six-step interactive lesson on
+  224G PAM4 (112 GBd, 1 UI = 8.93 ps, 6 ps/mm) transmission-line reflections, late echoes, bridged T-coil matching and
+  five-equalizer division of labor. An exact passive 2-port ABCD cascade (TX pad/T-coil, package, via, adjustable PCB
+  cavity, connector, matched 50 Ω copper cable, RX stub, RX pad/T-coil) computes S11, S21 notches, TDR impedance Z(x)
+  and causal pulse responses; a matching 1-D wave-splitting lattice decomposes the travelling wave algebraically into
+  primary forward, backward reflection and delayed forward echo waves (matching ABCD IFFT to < 5e-5 in the lossless limit).
+  On a calibrated shared front end, the lesson compares Bypass, 12-tap FFE, configurable up to 44-tap FFE (cancelling
+  +15…+35 UI far reflections), 1-tap DFE (with real burst error propagation) and 4-state PAM4 Viterbi MLSE on the same
+  8,000-symbol noisy ADC capture. `python/serdes_224g_reflections.py` reproduces every case and symbol-error count bit for bit.
 - **Clock and data recovery** at `/serdes/clock-and-data-recovery/`. A bang-bang CDR for 56 GBd NRZ, opened by a
   six-step guided tour for beginners on a slow-motion conveyor belt: bits ride past a reader and an edge checker, and each
   early/late verdict turns a timing knob (no clock, a clock error, steering by the edges, the integral path, jitter,

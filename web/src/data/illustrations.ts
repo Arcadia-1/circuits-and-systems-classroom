@@ -4,7 +4,7 @@ export interface Illustration {
   href: string;
   title: string;
   summary: string;
-  thumb: 'pll-intro' | 'bbpll' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie';
+  thumb: 'pll-intro' | 'bbpll' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'reflections' | 'cdr' | 'pcie';
   /** Whose site this is, for a page that is not on this one; it opens in a tab of its own. */
   external?: string;
   /** Public catalog label; assigned only after a lesson passes the editorial gate. */
@@ -179,6 +179,13 @@ export const related: Topic = {
       title: '112G PAM4 SerDes link',
       summary: 'Follow PAM4 symbols through a 3-D chip-to-chip link and equalize the eye.',
       thumb: 'serdes',
+      category: 'SerDes',
+    },
+    {
+      href: '/serdes/reflections-and-224g-eq/',
+      title: '224G reflections & equalization',
+      summary: 'Watch impedance steps spawn reflections, late echoes and notches—then see T-coils, 44-tap FFE, DFE and MLSE divide the cleanup.',
+      thumb: 'reflections',
       category: 'SerDes',
     },
     {

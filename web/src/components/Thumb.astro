@@ -1,6 +1,6 @@
 ---
 /** Small schematic previews for the home page. */
-interface Props { kind: 'pll-intro' | 'bbpll' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'cdr' | 'pcie' }
+interface Props { kind: 'pll-intro' | 'bbpll' | 'pipe-intro' | 'calibration' | 'pll' | 'sar' | 'inl' | 'err' | 'win' | 'fold' | 'ntf' | 'ti' | 'bits' | 'polar' | 'bode' | 'floor' | 'fom' | 'harm' | 'record' | 'repeat' | 'short' | 'train' | 'panel' | 'amplifier' | 'serdes' | 'reflections' | 'cdr' | 'pcie' }
 const { kind } = Astro.props;
 const xs = Array.from({ length: 13 }, (_, i) => 6 + i * 14);
 const saw = [-14, -8, -2, 6, 14];
@@ -91,6 +91,24 @@ const bbCycle = [0, -1, -2, -1, 0, 1];
 const bbTrace = ['4,14', '80,50', ...Array.from({ length: 22 }, (_, i) => `${80 + (i + 1) * 4.8},${50 + 4 * bbCycle[(i + 1) % 6]}`)].join(' ');
 const bbBits = Array.from({ length: 26 }, (_, i) => (i < 11 ? -1 : bbCycle[(i - 10) % 6] >= 0 ? 1 : -1));
 const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 14},${88}`, `${11 + i * 14},${66}`, `${18 + i * 14},${66}`]).join(' ');
+// reflections & 224G pulse response: a main forward pulse, backward reflection, and late far-echo bump
+const refFwd = Array.from({ length: 63 }, (_, i) => {
+  const x = 4 + i * 3;
+  const main = 28 * Math.exp(-0.5 * ((x - 132) / 9) ** 2);
+  const echo = 10 * Math.exp(-0.5 * ((x - 66) / 10) ** 2);
+  return `${x},${(42 - main - echo).toFixed(1)}`;
+}).join(' ');
+const refBack = Array.from({ length: 63 }, (_, i) => {
+  const x = 4 + i * 3;
+  const r1 = -13 * Math.exp(-0.5 * ((x - 92) / 9) ** 2);
+  return `${x},${(42 - r1).toFixed(1)}`;
+}).join(' ');
+const refPulse = Array.from({ length: 63 }, (_, i) => {
+  const x = 4 + i * 3;
+  const main = 30 * Math.exp(-0.5 * ((x - 38) / 8) ** 2) + 8 * Math.exp(-Math.max(0, x - 38) / 28) * (x > 38 ? 1 : 0);
+  const bump = 11 * Math.exp(-0.5 * ((x - 140) / 9) ** 2);
+  return `${x},${(90 - main - bump).toFixed(1)}`;
+}).join(' ');
 ---
 <svg class="thumb" viewBox="0 0 188 100" aria-hidden="true">
   {kind === 'pll-intro' ? (
@@ -146,6 +164,16 @@ const cdrClock = cdrBits.flatMap((_, i) => [`${4 + i * 14},${88}`, `${11 + i * 1
       <polyline class="s1 link" points={pamSteps} />
       <line class="base" x1="0" x2="188" y1="78" y2="78" />
       <polyline class="s2 link" points={pamSmeared} />
+    </>
+  ) : kind === 'reflections' ? (
+    <>
+      <rect class="win" x="108" y="8" width="12" height="44" rx="2" />
+      <line class="base" x1="0" x2="188" y1="42" y2="42" />
+      <polyline class="s1 link" points={refFwd} />
+      <polyline class="s2 link" points={refBack} />
+      <line class="base" x1="0" x2="188" y1="90" y2="90" />
+      <polyline class="s1 link" points={refPulse} />
+      <circle class="s2" cx="140" cy="79" r="2.6" />
     </>
   ) : kind === 'amplifier' ? (
     <>

@@ -17,6 +17,7 @@ export const publicLessonPaths = [
   '/pll/bang-bang/',
   '/amplifiers/open-loop-and-closed-loop/',
   '/serdes/112g-pam4-link/',
+  '/serdes/reflections-and-224g-eq/',
   '/serdes/clock-and-data-recovery/',
   '/serdes/pci-express/',
 ] as const;
