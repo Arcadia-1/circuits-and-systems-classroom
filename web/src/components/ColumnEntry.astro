@@ -8,13 +8,13 @@ const { column } = Astro.props;
 <a class="column" href={column.href} target="_blank" rel="noopener noreferrer">
   <div class="preview"><img src={column.image.src} width={column.image.width} height={column.image.height} alt="" loading="lazy" decoding="async" /></div>
   <div class="description">
-    <span class="source">{column.site} · {column.chapters} lessons</span>
+    <span class="source">{column.site} · {column.meta ?? `${column.chapters} lessons`}</span>
     <div class="heading">
       <h3>{column.title}</h3>
       <span class="arrow" aria-hidden="true">↗</span>
     </div>
     <p>{column.summary}</p>
-    <ol class="parts" aria-label="The course in five parts">
+    <ol class="parts" aria-label={`The course in ${column.parts.length} parts`}>
       {column.parts.map((part) => <li>{part}</li>)}
     </ol>
   </div>

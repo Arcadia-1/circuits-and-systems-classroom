@@ -5,6 +5,8 @@ export interface Column {
   title: string;
   summary: string;
   chapters: number;
+  /** Optional label after the site name; defaults to `${chapters} lessons`. */
+  meta?: string;
   /** Part titles in course order. */
   parts: string[];
   /** Cover image from the course's own page, kept in public/external/. */
@@ -21,5 +23,16 @@ export const columns: Column[] = [
     chapters: 34,
     parts: ['ADC basics', '4-bit model', 'Circuit blocks', 'Specs and upgrades', 'The analog signal chain'],
     image: { src: '/external/icdesign-sar-adc.jpg', width: 360, height: 303 },
+  },
+  {
+    href: 'https://icdesign.com/zhuanlan-ai',
+    site: 'icdesign.com',
+    title: 'Postmodern Analog IC Course: AI-Assisted Video Series (in Chinese)',
+    summary:
+      'Making abstract analog circuits visual through short, continuously updated AI-animated videos: Razavi analog fundamentals (MOS physics, single-stage and differential amplifiers, current mirrors, frequency response) alongside frontier topics in ΔΣ and high-speed ADCs, PLLs, 200G+ SerDes, RF, and recent ISSCC papers.',
+    chapters: 46,
+    meta: '46+ videos · ongoing',
+    parts: ['AI-assisted IC design', 'Razavi fundamentals', 'ΔΣ & high-speed ADCs', 'PLLs & timing', 'SerDes, RF & ISSCC'],
+    image: { src: '/external/icdesign-postmodern-analog.jpg', width: 360, height: 303 },
   },
 ];
